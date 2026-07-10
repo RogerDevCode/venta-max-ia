@@ -1,0 +1,4 @@
+# Ensure SKILL.md always uses LF to avoid BOM/CRLF issues with skills CLI
+SKILL.md text eol=lf
+*.py text eol=lf
+*.md text eol=lf
