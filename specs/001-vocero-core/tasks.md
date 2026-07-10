@@ -151,13 +151,13 @@ US1, US2 (MVP gate) → US3, US4, US5, US8 (núcleo P1) → US6 (P2) → US7 (P3
 
 **Independent Test**: wizard con IDs mock → probar conexión ok → guardar → estado conectado (last4); token `-invalid` → error claro SIN guardar; página muestra URL completa del webhook y estado de la capa de firma
 
-- [ ] T065 [US5] POST /api/settings/whatsapp/test — valida token↔número vía `GET {phoneNumberId}?fields=display_phone_number,verified_name` (NO persiste; MetaApiError → mensaje accionable) en src/app/api/settings/whatsapp/test/route.ts
-- [ ] T066 [US5] GET/PUT /api/settings/whatsapp — guardar (re-validar → cifrar → upsert; luego `POST {WABA_ID}/subscribed_apps` best-effort DV-VC-04) / estado (connected, display number, last4, reconnect_required) en src/app/api/settings/whatsapp/route.ts
-- [ ] T067 [US5] GET /api/settings/webhook — URL completa `{APP_BASE_URL}/api/webhooks/wa/{token}`, verify token, estado capa 2 (META_APP_SECRET configurado o aviso informativo) en src/app/api/settings/webhook/route.ts
-- [ ] T068 [US5] UI wizard src/app/(app)/settings/whatsapp/ — pasos: (1) origen del token explicado en ambos modos (directo: app propia de Meta; agencia: Tech Provider con override por WABA), (2) WABA ID + Phone Number ID + token, (3) probar conexión (gate), (4) guardar + datos del webhook para pegar en Meta; banner reconnect_required
-- [ ] T069 [US5] Manejo reconnect_required transversal: envíos bloqueados con error tipado + banner en Settings (tocar src/server/inbox/send.ts y settings UI)
-- [ ] T070 [P] [US5] tests/unit/credentials.test.ts — guardar cifra (no texto plano en fila), respuesta API solo last4, 190 en test → error mapeado sin persistir
-- [ ] T071 [US5] Guion E2E tests/e2e/us5-connect.md + ejecutarlo: camino feliz + token inválido + webhook info visible
+- [X] T065 [US5] POST /api/settings/whatsapp/test — valida token↔número vía `GET {phoneNumberId}?fields=display_phone_number,verified_name` (NO persiste; MetaApiError → mensaje accionable) en src/app/api/settings/whatsapp/test/route.ts
+- [X] T066 [US5] GET/PUT /api/settings/whatsapp — guardar (re-validar → cifrar → upsert; luego `POST {WABA_ID}/subscribed_apps` best-effort DV-VC-04) / estado (connected, display number, last4, reconnect_required) en src/app/api/settings/whatsapp/route.ts
+- [X] T067 [US5] GET /api/settings/webhook — URL completa `{APP_BASE_URL}/api/webhooks/wa/{token}`, verify token, estado capa 2 (META_APP_SECRET configurado o aviso informativo) en src/app/api/settings/webhook/route.ts
+- [X] T068 [US5] UI wizard src/app/(app)/settings/whatsapp/ — pasos: (1) origen del token explicado en ambos modos (directo: app propia de Meta; agencia: Tech Provider con override por WABA), (2) WABA ID + Phone Number ID + token, (3) probar conexión (gate), (4) guardar + datos del webhook para pegar en Meta; banner reconnect_required
+- [X] T069 [US5] Manejo reconnect_required transversal: envíos bloqueados con error tipado + banner en Settings (tocar src/server/inbox/send.ts y settings UI)
+- [X] T070 [P] [US5] tests/unit/credentials.test.ts — guardar cifra (no texto plano en fila), respuesta API solo last4, 190 en test → error mapeado sin persistir
+- [X] T071 [US5] Guion E2E tests/e2e/us5-connect.md + ejecutarlo: camino feliz + token inválido + webhook info visible
 
 **Checkpoint**: núcleo conectable E2E; agente+lab+bandeja operando sobre credenciales del wizard
 
