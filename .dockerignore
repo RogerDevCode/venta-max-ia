@@ -1,0 +1,17 @@
+node_modules
+.next
+.git
+.env*
+!.env.example
+*.log
+coverage
+.playwright-mcp
+docs
+specs
+memory
+tests
+Dockerfile
+docker-compose*.yml
+Caddyfile
+README.md
+INSTALL-IA.md
