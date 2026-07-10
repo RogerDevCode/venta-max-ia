@@ -110,16 +110,16 @@ US1, US2 (MVP gate) → US3, US4, US5, US8 (núcleo P1) → US6 (P2) → US7 (P3
 
 **Independent Test**: con ai-mock, inbound → respuesta del agente marcada IA; "quiero hablar con un humano" → handoff (IA off + conversación destacada); intención de compra → lead a "Interesado"
 
-- [ ] T046 [US3] src/lib/ai/index.ts — adaptador OpenRouter-compatible: chatJson<T> (3 intentos, instrucción STRICT al reintentar, extractJson fence/llaves balanceadas, Zod, error tipado, jamás loguear key), envs con defaults (JUDGE_MODEL = MODEL); sin token → capability off (DV-VC-06)
-- [ ] T047 [P] [US3] tests/unit/ai-adapter.test.ts — extractJson (fence, texto alrededor, JSON sucio), reintento ante inválido, salida error tipada sin excepción
-- [ ] T048 [US3] APIs: GET/PUT /api/agent/profile, CRUD /api/kb + GET /api/kb/size en src/app/api/agent/ y src/app/api/kb/
-- [ ] T049 [US3] UI src/app/(app)/agent/ — sección Comportamiento (nombre, tono, instrucciones, toggle global) + sección Knowledge base (entradas qa/block, contador tamaño); estado vacío claro sin OPENROUTER_API_TOKEN
-- [ ] T050 [US3] src/server/ai/prompts.ts — builder de system prompt (comportamiento + KB + etapas + reglas de acción JSON) y prompt del juez con marcador `[JUEZ]`
-- [ ] T051 [US3] src/server/ai/actions.ts — AgentAction (contrato ai.md), ejecución server-side: move_stage fuzzy contra etapas de la org (sin match → degradar reply/none), update_lead → nota, handoff → flags conversación
-- [ ] T052 [US3] src/server/ai/handoff.ts — regex de respaldo ANTES del LLM + tests/unit/handoff.test.ts (matches positivos + **"somos 4 personas" NO matchea**)
-- [ ] T053 [US3] src/server/ai/pipeline.ts — coalesce Map {timer,running,pending} por conversación (AGENT_COALESCE_MS, 6s prod / 0 lab), lock, re-run si pending, condiciones (IA global+conversación on, sin handoff), ventana cerrada/error persistente → handoff automático (reason ventana|error), mensajes salientes ai_generated, SSE (DV-VC-07)
-- [ ] T054 [US3] ai-mock src/app/api/dev/ai-mock/chat/completions/route.ts — despacho por contenido (contrato mocks.md: [JUEZ]→veredictos fijos, frase humano→handoff, compra→move_stage Interesado, default reply eco), shape OpenRouter, gated por dev-guard
-- [ ] T055 [US3] Guion E2E tests/e2e/us3-agent.md + ejecutarlo contra ai-mock: reply IA, handoff por frase (+ badge y toggle off), move_stage refleja en kanban, sin token → estados vacíos
+- [X] T046 [US3] src/lib/ai/index.ts — adaptador OpenRouter-compatible: chatJson<T> (3 intentos, instrucción STRICT al reintentar, extractJson fence/llaves balanceadas, Zod, error tipado, jamás loguear key), envs con defaults (JUDGE_MODEL = MODEL); sin token → capability off (DV-VC-06)
+- [X] T047 [P] [US3] tests/unit/ai-adapter.test.ts — extractJson (fence, texto alrededor, JSON sucio), reintento ante inválido, salida error tipada sin excepción
+- [X] T048 [US3] APIs: GET/PUT /api/agent/profile, CRUD /api/kb + GET /api/kb/size en src/app/api/agent/ y src/app/api/kb/
+- [X] T049 [US3] UI src/app/(app)/agent/ — sección Comportamiento (nombre, tono, instrucciones, toggle global) + sección Knowledge base (entradas qa/block, contador tamaño); estado vacío claro sin OPENROUTER_API_TOKEN
+- [X] T050 [US3] src/server/ai/prompts.ts — builder de system prompt (comportamiento + KB + etapas + reglas de acción JSON) y prompt del juez con marcador `[JUEZ]`
+- [X] T051 [US3] src/server/ai/actions.ts — AgentAction (contrato ai.md), ejecución server-side: move_stage fuzzy contra etapas de la org (sin match → degradar reply/none), update_lead → nota, handoff → flags conversación
+- [X] T052 [US3] src/server/ai/handoff.ts — regex de respaldo ANTES del LLM + tests/unit/handoff.test.ts (matches positivos + **"somos 4 personas" NO matchea**)
+- [X] T053 [US3] src/server/ai/pipeline.ts — coalesce Map {timer,running,pending} por conversación (AGENT_COALESCE_MS, 6s prod / 0 lab), lock, re-run si pending, condiciones (IA global+conversación on, sin handoff), ventana cerrada/error persistente → handoff automático (reason ventana|error), mensajes salientes ai_generated, SSE (DV-VC-07)
+- [X] T054 [US3] ai-mock src/app/api/dev/ai-mock/chat/completions/route.ts — despacho por contenido (contrato mocks.md: [JUEZ]→veredictos fijos, frase humano→handoff, compra→move_stage Interesado, default reply eco), shape OpenRouter, gated por dev-guard
+- [X] T055 [US3] Guion E2E tests/e2e/us3-agent.md + ejecutarlo contra ai-mock: reply IA, handoff por frase (+ badge y toggle off), move_stage refleja en kanban, sin token → estados vacíos
 
 **Checkpoint**: agente E2E verde con ai-mock
 
