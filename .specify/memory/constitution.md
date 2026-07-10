@@ -1,46 +1,43 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Plantilla base del starter. Personaliza por proyecto con /speckit-constitution.
+Versión: 1.1.0 (plantilla starter) → 1.2.0
 
-Versión actual: 1.1.0 (plantilla starter)
-Principios definidos (9):
-  - I.    Seguridad de Datos Primero (NO NEGOCIABLE)
-  - II.   Soberanía / Self-Hosted        [ajustable por proyecto]
-  - III.  Multi-Tenancy Real             [aplica si el producto es multi-tenant]
-  - IV.   Idempotencia en Integraciones Externas
-  - V.    Calidad Verificable Antes de "Hecho" (NO NEGOCIABLE)
-  - VI.   Specs Antes de Código
-  - VII.  Trazabilidad de Decisiones
-  - VIII. Foco Vertical [DEFINE-TU-NICHO]   <- RELLENA esto por proyecto
-  - IX.   Verificación de Comportamiento en Vivo (NO NEGOCIABLE)
+Cambios:
+  - Título y descripción del producto: Vocero CRM (CRM de WhatsApp con agente de
+    IA, open source MIT, self-hosted, gratuito; una instancia = un negocio).
+  - Principio II "Soberanía / Self-Hosted" → ENDURECIDO: se elimina la excepción
+    de almacenamiento de objetos S3-compatible; lista cerrada de dependencias
+    externas en runtime (WhatsApp Cloud API + proveedor LLM opcional vía
+    adaptador OpenRouter-compatible); prohibición explícita v1 de S3/R2, email,
+    Stripe y Google; requisitos mínimos del instalador fijados.
+  - Principio VIII "Foco Vertical" → definido: CRM de conversaciones y leads de
+    WhatsApp que las agencias despliegan para negocios.
+  - Principios I, III, IV, V, VI, VII y IX: íntegros (sin cambio semántico).
+  - Governance: Ratified / Last Amended = 2026-07-09.
 
-Historial de la plantilla:
-  - 1.0.0: 8 principios base (I-VII genéricos + VIII hueco del nicho).
-  - 1.1.0: añadido Principio IX "Verificación de Comportamiento en Vivo" —
-    self-test E2E + loop de auto-corrección (self-improvement loop) por el
-    implementador para toda feature con comportamiento observable.
+Bump: MINOR (1.1.0 → 1.2.0) — expansión material del Principio II y definición
+del Principio VIII; sin eliminaciones ni redefiniciones incompatibles.
 
-Cómo usar esta plantilla:
-  1. Ejecuta /speckit-constitution y describe tu producto + nicho.
-  2. Conserva, ajusta o elimina los principios genéricos (I-VII) según tu caso.
-     Algunos (multi-tenancy, self-hosted) no aplican a todo proyecto: bórralos
-     si no corresponden en lugar de dejarlos como letra muerta.
-  3. Reemplaza el Principio VIII por el foco vertical real de tu producto.
-  4. Sube la versión y actualiza este Sync Impact Report.
+Plantillas dependientes:
+  - .specify/templates/plan-template.md — ✅ compatible (Constitution Check
+    genérico; los gates se evalúan contra esta versión).
+  - .specify/templates/spec-template.md — ✅ compatible (sin secciones nuevas).
+  - .specify/templates/tasks-template.md — ✅ compatible.
+  - CLAUDE.md — ⚠ se personaliza para el usuario final del repo en la fase de
+    implementación (tarea planificada de la feature 001).
+
+TODOs diferidos: ninguno.
 -->
 
-# [NOMBRE_DEL_PROYECTO] Constitution
+# Vocero CRM Constitution
 
-[Una línea sobre qué es el producto]. Esta constitución define las reglas no
+Vocero CRM es un CRM de WhatsApp con agente de IA, open source (MIT), self-hosted y
+gratuito, diseñado para que las agencias de IA lo desplieguen en el VPS de sus
+clientes: una instancia = un negocio. Esta constitución define las reglas no
 negociables del producto. Aplica a todas las fases del flujo de trabajo (specify,
 plan, tasks, implement). Cualquier conflicto entre una decisión de implementación y
 esta constitución SE RESUELVE A FAVOR de esta constitución.
-
-> **Esto es una plantilla.** Los principios I-VII son defaults sólidos y genéricos
-> heredados del starter; consérvalos, ajústalos o elimínalos según tu producto. El
-> Principio VIII es el **hueco del nicho**: defínelo. Usa `/speckit-constitution`
-> para personalizar y versionar este archivo.
 
 ## Core Principles
 
@@ -60,45 +57,55 @@ velocidad de entrega o conveniencia de desarrollo.
 **Rationale**: Una fuga de credenciales o un cruce de datos entre clientes es un
 fallo catastrófico e irreversible; prevenirlo siempre cuesta menos que remediarlo.
 
-### II. Soberanía / Self-Hosted   [ajustable por proyecto]
+### II. Soberanía / Self-Hosted (ENDURECIDO)
 
-El producto debería poder operar sobre infraestructura propia, sin depender de SaaS
-de terceros para sus funciones core. *(Ajusta o elimina si tu producto acepta
-servicios gestionados.)*
+Vocero CRM opera completo sobre la infraestructura del operador. La lista de
+dependencias externas en runtime es CERRADA:
 
-- Las funciones CORE —autenticación y base de datos— corren sobre infraestructura
-  controlada por el operador del producto. Depender de un tercero para una función
-  core se justifica explícitamente en el Complexity Tracking del plan.
-- El almacenamiento de objetos PUEDE usar un servicio externo compatible con S3
-  SIEMPRE QUE el código acceda vía la interfaz S3 estándar, de modo que migrar a una
-  alternativa self-hosted (p. ej. MinIO) no requiera cambios de código.
-- Las integraciones externas inevitables se aíslan tras una frontera clara para no
-  acoplar el core a ellas.
+- Dependencias externas permitidas en runtime, ÚNICAMENTE:
+  1. **WhatsApp Cloud API** (Meta Graph API) — el canal es la razón de ser del
+     producto.
+  2. **El proveedor LLM**, opcional, accedido EXCLUSIVAMENTE a través del adaptador
+     OpenRouter-compatible (`OPENROUTER_BASE_URL` / `OPENROUTER_MODEL`). Sin token
+     configurado, el producto funciona como CRM sin agente de IA.
+- **PROHIBIDO en v1**: almacenamiento de objetos externo (S3/R2), servicios de
+  email, Stripe u otro billing, y servicios de Google. Cualquier feature que los
+  requiera queda fuera del alcance de v1.
+- El instalador solo necesita: un VPS con Coolify o Docker, un dominio, credenciales
+  de Meta y (opcional) un token de OpenRouter. Nada más.
+- Las funciones core —autenticación y base de datos— corren self-hosted (Better
+  Auth + PostgreSQL propios de la instancia).
+- Las integraciones externas permitidas se aíslan tras adaptadores dedicados
+  (cliente Graph API propio; adaptador LLM) para no acoplar el dominio a ellas.
 
-**Rationale**: La soberanía sobre datos e infraestructura es un diferenciador y un
-requisito para clientes con restricciones de residencia de datos.
+**Rationale**: El producto se regala para que agencias lo desplieguen en VPS de
+clientes; cada dependencia externa adicional es un costo, un punto de fallo y una
+fuga de soberanía que rompe la promesa "gratis y tuyo".
 
-### III. Multi-Tenancy Real   [aplica si el producto es multi-tenant]
+### III. Multi-Tenancy Real
 
-El sistema sirve a múltiples organizaciones independientes desde una sola instancia
-lógica. *(Elimina este principio si tu producto es single-tenant.)*
+El sistema sirve a organizaciones independientes desde una sola instancia lógica.
+En Vocero cada instancia sirve a UN negocio, pero el modelo de datos es
+multi-tenant real (organización del plugin de auth) para mantener el aislamiento
+exigible y no cerrar la puerta a evoluciones.
 
 - Cada organización (tenant) gestiona sus propios usuarios, roles y permisos.
-- El identificador de tenant es un parámetro de primer nivel en el modelo de datos y
-  en la capa de acceso a datos, no un campo opcional añadido a posteriori.
+- El identificador de tenant (`organization_id`) es un parámetro de primer nivel en
+  el modelo de datos y en la capa de acceso a datos, no un campo opcional añadido a
+  posteriori. Toda tabla de dominio lo lleva NOT NULL e indexado org-first.
 
 **Rationale**: Multi-tenancy diseñado desde el inicio evita reescrituras costosas y
 hace cumplible el aislamiento del Principio I.
 
 ### IV. Idempotencia en Integraciones Externas
 
-Todo evento entrante de un sistema externo (webhooks, callbacks de pago,
-notificaciones de terceros) se procesa de forma idempotente.
+Todo evento entrante de un sistema externo (webhooks, callbacks, notificaciones de
+terceros) se procesa de forma idempotente.
 
 - Recibir el mismo evento dos o más veces NO duplica efectos observables (mensajes
-  reenviados, cargos repetidos, registros duplicados).
-- Cada evento entrante se identifica de forma única y su procesamiento se registra
-  para detectar y descartar reintentos.
+  reenviados, registros duplicados, acciones del agente repetidas).
+- Cada evento entrante se identifica de forma única (p. ej. `wa_message_id` UNIQUE)
+  y su procesamiento se registra para detectar y descartar reintentos.
 
 **Rationale**: Los proveedores externos reintentan entregas por diseño; sin
 idempotencia, los reintentos corrompen datos y generan acciones duplicadas.
@@ -144,21 +151,22 @@ Las decisiones tomadas sin contexto suficiente se documentan para revisión huma
 **Rationale**: Las decisiones implícitas bajo incertidumbre son la principal fuente
 de deuda oculta; hacerlas visibles permite corregirlas a tiempo.
 
-### VIII. Foco Vertical [DEFINE-TU-NICHO]
+### VIII. Foco Vertical — CRM de Conversaciones y Leads de WhatsApp
 
-> **RELLENA ESTE PRINCIPIO.** Es el que ancla el producto a un dominio concreto e
-> impide que derive hacia una herramienta genérica. Ejemplo del proyecto original:
-> "Foco Vertical Inmobiliario — es un CRM inmobiliario, no una herramienta genérica
-> de mensajería".
+Es un CRM de conversaciones y leads de WhatsApp que las agencias despliegan para
+negocios. No es plataforma de marketing masivo, ni constructor visual de flujos, ni
+herramienta de scraping. Lo que no ayude a *atender, organizar y convertir
+conversaciones de WhatsApp de UN negocio* se rechaza.
 
-Este producto sirve específicamente a **[describe tu nicho: clínicas, restaurantes,
-talleres, e-commerce, etc.]**.
-
-- El modelo de datos y los flujos MUST reflejar el dominio real de **[tu nicho]**.
-- **[El canal/tecnología principal, p. ej. WhatsApp]** es un medio, no define la
-  naturaleza del producto.
-- Toda feature MUST servir a **[tu usuario objetivo]**. Cualquier feature que no
-  cumpla esa condición queda FUERA del alcance de v1.
+- El modelo de datos y los flujos MUST reflejar ese dominio: contactos que escriben
+  por WhatsApp, conversaciones con ventana de 24h, leads en un pipeline, un agente
+  de IA que atiende con el conocimiento del negocio y escala a humanos.
+- WhatsApp Cloud API es el canal; el producto es el CRM. Features de canal que no
+  sirvan a atender/organizar/convertir (broadcast masivo, scraping de números,
+  flujos visuales genéricos) quedan FUERA del alcance de v1.
+- Toda feature MUST servir a la agencia que despliega o al negocio que opera UNA
+  instancia. Lo que solo sirva a una plataforma centralizada (billing, planes,
+  multi-instancia) queda FUERA.
 
 **Rationale**: Un foco vertical explícito mantiene el modelo de datos alineado con el
 negocio real y da un criterio claro para aceptar o rechazar alcance.
@@ -207,10 +215,15 @@ Estas restricciones derivan de los Principios I y II y son verificables en revis
   gestor de secretos; nunca se comprometen a control de versiones.
 - **Cifrado en reposo**: credenciales y datos sensibles se almacenan cifrados; el
   almacenamiento en claro de secretos es una violación.
-- **Frontera de tenant** (si aplica): la capa de acceso a datos exige el identificador
+- **Frontera de tenant**: la capa de acceso a datos exige el identificador
   de tenant; cualquier acceso que pueda omitirlo requiere justificación explícita.
 - **Aislamiento de integraciones**: las dependencias de APIs externas se acceden a
-  través de adaptadores dedicados, no dispersas por el dominio.
+  través de adaptadores dedicados (cliente Graph API propio, adaptador LLM
+  OpenRouter-compatible), no dispersas por el dominio.
+- **Instancia pública endurecida**: las rutas de mock/desarrollo devuelven 404
+  incondicional en producción; el registro se cierra tras la primera organización
+  (salvo habilitación explícita); los entornos de prueba internos JAMÁS alcanzan la
+  API real de WhatsApp.
 
 ## Flujo de Desarrollo y Puertas de Calidad
 
@@ -247,4 +260,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.1.0 | **Ratified**: [FECHA] | **Last Amended**: [FECHA]
+**Version**: 1.2.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-07-09
