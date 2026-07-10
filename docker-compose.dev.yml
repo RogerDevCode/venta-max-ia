@@ -1,4 +1,7 @@
 # Postgres local para desarrollo. Uso: docker compose -f docker-compose.dev.yml up -d
+# `name` propio: evita colisionar con el proyecto del docker-compose.yml (Ruta B).
+name: vocero-dev
+
 services:
   postgres:
     image: postgres:16-alpine

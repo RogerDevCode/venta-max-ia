@@ -189,12 +189,12 @@ US1, US2 (MVP gate) → US3, US4, US5, US8 (núcleo P1) → US6 (P2) → US7 (P3
 
 **Independent Test**: crear plantilla → pending; wa-mock template-status APPROVED → badge aprobado; conversación con ventana cerrada → enviar plantilla con variable → aparece en outbox con components
 
-- [ ] T081 [US6] src/server/whatsapp/templates.ts — create en Meta (`POST {WABA_ID}/message_templates`), countVariables (`/\{\{\s*(\d+)\s*\}\}/g`, máx 1), renderBody, buildSendComponents, syncTemplates pull (`GET {WABA_ID}/message_templates`, match por waTemplateId o name+language), errores tipados → HTTP (DV-VC-15)
-- [ ] T082 [US6] APIs GET/POST /api/templates + POST /api/templates/sync; routing de `message_template_status_update` por `entry[].id` en el webhook (upsert estado) en src/app/api/templates/ y webhook route
-- [ ] T083 [US6] UI plantillas en src/app/(app)/settings/templates/ — form (nombre, idioma, categoría, body con una `{{1}}`), lista con badges de estado, botón Sincronizar (cubre modo agencia), nota de la limitación
-- [ ] T084 [US6] POST /api/conversations/[id]/messages/template ({templateId, variable}; solo approved, valida variable) + integración en composer de ventana cerrada (T037) en src/app/api/conversations/ e inbox UI
-- [ ] T085 [P] [US6] tests/unit/templates.test.ts — countVariables (0, 1, {{2}} inválida, espacios), validación de envío (no aprobada → error, variable faltante → error)
-- [ ] T086 [US6] Guion E2E tests/e2e/us6-templates.md + ejecutarlo: ciclo completo crear→aprobar (mock)→enviar en ventana cerrada→outbox con components
+- [X] T081 [US6] src/server/whatsapp/templates.ts — create en Meta (`POST {WABA_ID}/message_templates`), countVariables (`/\{\{\s*(\d+)\s*\}\}/g`, máx 1), renderBody, buildSendComponents, syncTemplates pull (`GET {WABA_ID}/message_templates`, match por waTemplateId o name+language), errores tipados → HTTP (DV-VC-15)
+- [X] T082 [US6] APIs GET/POST /api/templates + POST /api/templates/sync; routing de `message_template_status_update` por `entry[].id` en el webhook (upsert estado) en src/app/api/templates/ y webhook route
+- [X] T083 [US6] UI plantillas en src/app/(app)/settings/templates/ — form (nombre, idioma, categoría, body con una `{{1}}`), lista con badges de estado, botón Sincronizar (cubre modo agencia), nota de la limitación
+- [X] T084 [US6] POST /api/conversations/[id]/messages/template ({templateId, variable}; solo approved, valida variable) + integración en composer de ventana cerrada (T037) en src/app/api/conversations/ e inbox UI
+- [X] T085 [P] [US6] tests/unit/templates.test.ts — countVariables (0, 1, {{2}} inválida, espacios), validación de envío (no aprobada → error, variable faltante → error)
+- [X] T086 [US6] Guion E2E tests/e2e/us6-templates.md + ejecutarlo: ciclo completo crear→aprobar (mock)→enviar en ventana cerrada→outbox con components
 
 **Checkpoint**: SEGUNDO ANILLO completo
 
