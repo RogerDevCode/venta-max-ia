@@ -1,31 +1,63 @@
 "use client";
 
-import { UserRound } from "lucide-react";
+import { useState } from "react";
+import { Sparkles, UserRound } from "lucide-react";
 import type { ConversationDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatTime, previewText } from "./helpers";
+
+function EmptyState({ onSeeded }: { onSeeded: () => void }) {
+  const [seeding, setSeeding] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  async function seed() {
+    setSeeding(true);
+    const res = await fetch("/api/seed/demo", { method: "POST" }).catch(
+      () => null
+    );
+    setSeeding(false);
+    if (res?.ok) onSeeded();
+    else setFailed(true);
+  }
+
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+      <p className="text-sm font-medium">Sin conversaciones todavía</p>
+      <p className="text-xs text-muted-foreground">
+        Cuando alguien escriba a tu número de WhatsApp, su conversación
+        aparecerá aquí en tiempo real.
+      </p>
+      {!failed && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={seeding}
+          onClick={() => void seed()}
+        >
+          <Sparkles className="h-4 w-4" />
+          {seeding ? "Cargando demo…" : "Cargar datos de demostración"}
+        </Button>
+      )}
+    </div>
+  );
+}
 
 export function ConversationList({
   conversations,
   selectedId,
   onSelect,
+  onSeeded,
 }: {
   conversations: ConversationDto[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onSeeded: () => void;
 }) {
   if (conversations.length === 0) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-        <p className="text-sm font-medium">Sin conversaciones todavía</p>
-        <p className="text-xs text-muted-foreground">
-          Cuando alguien escriba a tu número de WhatsApp, su conversación
-          aparecerá aquí en tiempo real.
-        </p>
-      </div>
-    );
+    return <EmptyState onSeeded={onSeeded} />;
   }
 
   return (

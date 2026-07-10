@@ -169,14 +169,14 @@ US1, US2 (MVP gate) → US3, US4, US5, US8 (núcleo P1) → US6 (P2) → US7 (P3
 
 **Independent Test**: `DOMAIN=localhost docker compose up -d --build` → https://localhost sirve, registro→demo→bandeja funcional, SSE ≤2s a través de Caddy
 
-- [ ] T072 [US8] scripts/migrate.mjs (drizzle migrator, max:1, onnotice silencioso, MIGRATIONS_DIR relativo) + bundle esbuild en build de Docker + script pnpm `db:migrate:prod` (DV-VC-11)
-- [ ] T073 [US8] Dockerfile multi-stage node:22-alpine — corepack pnpm, build standalone, `CMD ["sh","-c","node migrate.mjs && node server.js"]`, HEALTHCHECK /api/health start-period 40s
-- [ ] T074 [US8] docker-compose.yml (app + postgres16 + caddy con `{$DOMAIN}`, healthchecks, depends_on condition) + Caddyfile (reverse_proxy, sin buffering extra)
-- [ ] T075 [US8] Seed "Ferretería El Martillo": scripts/seed/demo.mjs + POST /api/seed/demo + botón en UI (solo BD de dominio vacía) — ~8 contactos MX, conversaciones con cotizaciones MXN, pipeline poblado, KB llena con huecos INTENCIONALES (garantías y devoluciones), 1 corrida de Laboratorio de ejemplo guardada; idempotente (DELETE org demo por orden de FKs)
-- [ ] T076 [US8] INSTALL-IA.md — guía para que una IA (Claude Code + Coolify MCP) instale sola: pregunta SOLO dominio, token OpenRouter (opcional) y ruta A/B; genera secretos con openssl; crea app+Postgres en Coolify; termina indicando que WhatsApp se conecta en Settings
-- [ ] T077 [US8] README.md completo — pitch, features (Laboratorio PRIMERO), instalación A/B, conexión del número (modo directo y **checklist de 5 pasos del modo agencia con diagrama de texto** + limitación de plantillas y su sync), cumplimiento Meta (5 puntos), FAQ, roadmap, licencia MIT, placeholders `[LINKS-KEVIN]`
-- [ ] T078 [P] [US8] LICENSE (MIT) + revisión de metadata pública de package.json (name vocero-crm, license MIT)
-- [ ] T079 [US8] Reescribir CLAUDE.md del repo para el usuario final (agencia que modifica con Claude Code): stack real sin corchetes, fronteras de modificación (lib/ai, lib/meta, schema, prompts), reglas de constitución II endurecida (sin regla S3), envs con ejemplo OPENROUTER_JUDGE_MODEL, metodología de verificación
+- [X] T072 [US8] scripts/migrate.mjs (drizzle migrator, max:1, onnotice silencioso, MIGRATIONS_DIR relativo) + bundle esbuild en build de Docker + script pnpm `db:migrate:prod` (DV-VC-11)
+- [X] T073 [US8] Dockerfile multi-stage node:22-alpine — corepack pnpm, build standalone, `CMD ["sh","-c","node migrate.mjs && node server.js"]`, HEALTHCHECK /api/health start-period 40s
+- [X] T074 [US8] docker-compose.yml (app + postgres16 + caddy con `{$DOMAIN}`, healthchecks, depends_on condition) + Caddyfile (reverse_proxy, sin buffering extra)
+- [X] T075 [US8] Seed "Ferretería El Martillo": scripts/seed/demo.mjs + POST /api/seed/demo + botón en UI (solo BD de dominio vacía) — ~8 contactos MX, conversaciones con cotizaciones MXN, pipeline poblado, KB llena con huecos INTENCIONALES (garantías y devoluciones), 1 corrida de Laboratorio de ejemplo guardada; idempotente (DELETE org demo por orden de FKs)
+- [X] T076 [US8] INSTALL-IA.md — guía para que una IA (Claude Code + Coolify MCP) instale sola: pregunta SOLO dominio, token OpenRouter (opcional) y ruta A/B; genera secretos con openssl; crea app+Postgres en Coolify; termina indicando que WhatsApp se conecta en Settings
+- [X] T077 [US8] README.md completo — pitch, features (Laboratorio PRIMERO), instalación A/B, conexión del número (modo directo y **checklist de 5 pasos del modo agencia con diagrama de texto** + limitación de plantillas y su sync), cumplimiento Meta (5 puntos), FAQ, roadmap, licencia MIT, placeholders `[LINKS-KEVIN]`
+- [X] T078 [P] [US8] LICENSE (MIT) + revisión de metadata pública de package.json (name vocero-crm, license MIT)
+- [X] T079 [US8] Reescribir CLAUDE.md del repo para el usuario final (agencia que modifica con Claude Code): stack real sin corchetes, fronteras de modificación (lib/ai, lib/meta, schema, prompts), reglas de constitución II endurecida (sin regla S3), envs con ejemplo OPENROUTER_JUDGE_MODEL, metodología de verificación
 - [ ] T080 [US8] Checkpoint E2E compose: build+up, https://localhost, registro→seed→inbound mock→**SSE ≤2s a través de Caddy**, healthchecks verdes, logs sin secretos
 
 **Checkpoint**: NÚCLEO NO NEGOCIABLE completo (US1–US5 + US8) — candidato a merge

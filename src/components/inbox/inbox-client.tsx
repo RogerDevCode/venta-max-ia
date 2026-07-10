@@ -144,6 +144,7 @@ export function InboxClient() {
           conversations={conversations}
           selectedId={selectedId}
           onSelect={select}
+          onSeeded={() => void refetchConversations()}
         />
       </section>
 

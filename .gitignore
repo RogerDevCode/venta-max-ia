@@ -38,3 +38,4 @@ Thumbs.db
 # proyecto compartida con el equipo). La config local de la sesión, no:
 .claude/settings.local.json
 .playwright-mcp/
+.tmp-seed-demo.mjs
