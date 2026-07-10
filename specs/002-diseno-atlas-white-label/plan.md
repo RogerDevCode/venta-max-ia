@@ -60,5 +60,5 @@ sin cambios de webhook/idempotencia ✓ · verificación en vivo con Playwright 
       `tests/e2e/us-diseno.md` — regresión funcional de bandeja (SSE, enviar,
       ventana cerrada), colapsar/reabrir panel, stepper mueve etapa,
       white-label cambia nombre+acento y persiste; capturas nuevas para README
-- [ ] T212 Commit + merge a main tras verificación (OK del flujo 001 se asume
+- [X] T212 Commit + merge a main tras verificación (OK del flujo 001 se asume
       SOLO si el dueño lo da — preguntar antes de merge)
