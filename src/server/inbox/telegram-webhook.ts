@@ -79,12 +79,8 @@ export async function processTelegramUpdate(input: {
     // Disparar señal de escritura en T=0ms sin bloquear
     void sendChatAction({ chatId, action: "typing" }).catch(() => {});
 
-    // Intentar responder al callback para quitar el loader del botón en el cliente de Telegram
-    try {
-      await answerCallbackQuery({ callbackQueryId: queryId });
-    } catch {
-      // No bloquear la ingesta si la llamada a answerCallbackQuery falla
-    }
+    // Disparar respuesta al callback en segundo plano sin bloquear la ingesta del mensaje
+    void answerCallbackQuery({ callbackQueryId: queryId }).catch(() => {});
 
     await ingestInboundMessage({
       organizationId,
