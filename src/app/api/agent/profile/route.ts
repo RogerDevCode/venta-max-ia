@@ -18,6 +18,7 @@ export const GET = withAuth(async (session) => {
   return Response.json({
     profile: {
       enabled: p.enabled,
+      humanAvailable: p.humanAvailable,
       name: p.name,
       tone: p.tone,
       instructions: p.instructions,
@@ -30,6 +31,7 @@ export const GET = withAuth(async (session) => {
 
 const putSchema = z.object({
   enabled: z.boolean().optional(),
+  humanAvailable: z.boolean().optional(),
   name: z.string().trim().min(1).max(60).optional(),
   tone: z.string().max(500).nullable().optional(),
   instructions: z.string().max(8000).nullable().optional(),

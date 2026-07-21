@@ -7,6 +7,7 @@ const { mockUpdateSet, mockSendText, mockSchema, mockDbState, mockApplyHandoff, 
     message: { conversationId: "conversation_id", createdAt: "created_at" },
     cart: { organizationId: "organization_id", conversationId: "conversation_id", status: "status", items: "items" },
     order: { organizationId: "organization_id", conversationId: "conversation_id", createdAt: "created_at", totalAmount: "total_amount", orderNumber: "order_number", status: "status" },
+    agentProfile: { organizationId: "organization_id" },
   };
   return {
     mockUpdateSet: vi.fn(),
@@ -18,6 +19,7 @@ const { mockUpdateSet, mockSendText, mockSchema, mockDbState, mockApplyHandoff, 
       conversation: null as Record<string, unknown> | null,
       carts: [] as Record<string, unknown>[],
       orders: [] as Record<string, unknown>[],
+      profiles: [] as Record<string, unknown>[],
     },
   };
 });
@@ -44,7 +46,14 @@ vi.mock("@/lib/db", () => ({
     select: () => ({
       from: (table: unknown) => ({
         where: () => ({
-          limit: () => Promise.resolve(table === mockSchema.cart ? mockDbState.carts : []),
+          limit: () =>
+            Promise.resolve(
+              table === mockSchema.agentProfile
+                ? mockDbState.profiles
+                : table === mockSchema.cart
+                ? mockDbState.carts
+                : []
+            ),
           orderBy: () => ({
             limit: () => Promise.resolve(mockDbState.orders),
           }),
@@ -148,7 +157,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       );
     });
 
-    it("opción menu:humano debe derivar la conversación al agente humano en el Kanban", async () => {
+    it("opción menu:humano / 6 debe derivar la conversación al agente humano y enviar mensaje según disponibilidad (humanAvailable)", async () => {
       const result = await processSlashCommand({
         command: "menu:humano",
         conversation: mockDbState.conversation as any,
@@ -157,6 +166,11 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
 
       expect(result.handled).toBe(true);
       expect(mockApplyHandoff).toHaveBeenCalledWith("conv_cmd_123", "org_cmd_123", "cliente");
+      expect(mockSendText).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining("revisará tu solicitud a la brevedad"),
+        })
+      );
     });
   });
 });

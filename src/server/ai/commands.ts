@@ -233,10 +233,19 @@ export async function processSlashCommand(input: {
 
     case "humano":
     case "menu:humano": {
-      const farewellText =
-        `Un agente humano revisará tu solicitud a la brevedad. Gracias por comunicarte con nosotros. 👋`;
+      const profileRows = await db
+        .select()
+        .from(schema.agentProfile)
+        .where(scoped(schema.agentProfile.organizationId, organizationId))
+        .limit(1);
+      const profile = profileRows[0];
+      const humanAvailable = profile?.humanAvailable ?? true;
 
-      await deliverCommandReply(conversation, farewellText);
+      const responseText = humanAvailable
+        ? `Un agente humano revisará tu solicitud a la brevedad. Gracias por comunicarte con nosotros. 👋`
+        : `En este momento no contamos con un agente humano disponible en línea. Hemos tomado tu solicitud y te responderemos tan pronto como nos conectemos. ¡Gracias por tu paciencia! 🙏`;
+
+      await deliverCommandReply(conversation, responseText);
       await applyHandoff(conversationId, organizationId, "cliente");
       return { handled: true };
     }

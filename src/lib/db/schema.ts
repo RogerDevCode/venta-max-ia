@@ -315,6 +315,7 @@ export const agentProfile = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     enabled: boolean("enabled").notNull().default(false),
+    humanAvailable: boolean("human_available").notNull().default(true),
     name: text("name").notNull().default("Asistente"),
     tone: text("tone"),
     instructions: text("instructions"),

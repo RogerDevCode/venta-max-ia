@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 type Profile = {
   enabled: boolean;
+  humanAvailable: boolean;
   name: string;
   tone: string | null;
   instructions: string | null;
@@ -72,29 +73,53 @@ export function AgentClient() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <header className="flex items-center justify-between border-b px-6 py-4">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b px-6 py-4">
         <h2 className="font-semibold">Agente de IA</h2>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-6">
           {saved && <span className="text-xs text-primary">Guardado ✓</span>}
-          <span className="text-sm text-muted-foreground">
-            {profile.enabled ? "Encendido" : "Apagado"}
-          </span>
-          <button
-            role="switch"
-            aria-checked={profile.enabled}
-            aria-label="Agente encendido"
-            disabled={!aiConfigured}
-            onClick={() => void saveProfile({ enabled: !profile.enabled })}
-            className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-40 ${
-              profile.enabled ? "bg-primary" : "bg-secondary"
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                profile.enabled ? "translate-x-5" : "translate-x-0.5"
+          
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">
+              {profile.humanAvailable ? "👤 Humano Disponible" : "🚫 Sin Humano Disponible"}
+            </span>
+            <button
+              role="switch"
+              aria-checked={profile.humanAvailable}
+              aria-label="Humano disponible"
+              onClick={() => void saveProfile({ humanAvailable: !profile.humanAvailable })}
+              className={`relative h-6 w-11 rounded-full transition-colors ${
+                profile.humanAvailable ? "bg-emerald-600" : "bg-amber-600"
               }`}
-            />
-          </button>
+            >
+              <span
+                className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                  profile.humanAvailable ? "translate-x-5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">
+              {profile.enabled ? "IA Encendida" : "IA Apagada"}
+            </span>
+            <button
+              role="switch"
+              aria-checked={profile.enabled}
+              aria-label="Agente encendido"
+              disabled={!aiConfigured}
+              onClick={() => void saveProfile({ enabled: !profile.enabled })}
+              className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-40 ${
+                profile.enabled ? "bg-primary" : "bg-secondary"
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                  profile.enabled ? "translate-x-5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
         </div>
       </header>
 
