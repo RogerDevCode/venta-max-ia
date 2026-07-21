@@ -55,7 +55,11 @@ export function scheduleAgentTurn(conversationId: string, immediate = false): vo
   map.set(conversationId, entry);
 
   if (entry.running) {
-    entry.pending = true; // se re-encola al terminar el turno actual
+    if (immediate) {
+      // Para clics de botón/comandos: descartar el doble clic accidental por ráfaga
+      return;
+    }
+    entry.pending = true; // para texto libre: se re-encola al terminar el turno
     return;
   }
   if (entry.timer) clearTimeout(entry.timer);
