@@ -16,6 +16,7 @@ import {
   agregarAlCarrito,
   confirmarPedido,
 } from "@/server/ecommerce/service";
+import { parseSlashCommand, processSlashCommand } from "@/server/ai/commands";
 
 /**
  * Turno del agente (FR-021..FR-025).
@@ -86,34 +87,37 @@ async function executeTurn(conversationId: string): Promise<void> {
 }
 
 /**
- * Ejecuta UN turno del agente ahora (el Laboratorio lo llama directo, con
- * debounce 0 y sin pasar por el coalesce).
+ * Ejecuta un turno del agente IA (FR-020, FR-021).
+ * Recibe el conversationId, extrae historial, evalúa contexto RAG + FSB y despacha acciones.
  */
 export async function runAgentTurn(conversationId: string): Promise<void> {
   if (!isAiConfigured()) return;
 
   const db = getDb();
+
   const convRows = await db
     .select()
     .from(schema.conversation)
     .where(eq(schema.conversation.id, conversationId))
     .limit(1);
+
   const conversation = convRows[0];
   if (!conversation) return;
-  const organizationId = conversation.organizationId;
 
-  // Condiciones de silencio: handoff activo o IA apagada en la conversación.
-  if (conversation.handoffAt || !conversation.aiEnabled) return;
+  const { organizationId } = conversation;
+
+  if (!conversation.aiEnabled || conversation.handoffAt) {
+    return;
+  }
 
   const profileRows = await db
     .select()
     .from(schema.agentProfile)
     .where(eq(schema.agentProfile.organizationId, organizationId))
     .limit(1);
+
   const profile = profileRows[0];
   if (!profile) return;
-  // El toggle global aplica a conversaciones reales; el Laboratorio evalúa el
-  // comportamiento configurado aunque el agente aún no esté encendido.
   if (!conversation.isTest && !profile.enabled) return;
 
   const history = await db
@@ -122,12 +126,30 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     .where(eq(schema.message.conversationId, conversationId))
     .orderBy(desc(schema.message.createdAt))
     .limit(20);
-  history.reverse();
 
-  const lastInbound = history.filter((m) => m.direction === "in").at(-1);
+  history.reverse();
+  const lastInbound = [...history].reverse().find((m) => m.direction === "in");
+
   if (!lastInbound) return;
 
-  // Refrescar señal de escritura en Telegram apenas empieza a pensar el LLM
+  // Intercepción directa de Comandos Slash (/start, /menu, /reset, /humano)
+  if (lastInbound.text) {
+    const slashCmd = parseSlashCommand(lastInbound.text);
+    if (slashCmd) {
+      const cmdResult = await processSlashCommand({
+        command: slashCmd,
+        conversation,
+        lastInboundWaId: lastInbound.waMessageId,
+      });
+      if (cmdResult.handled) return;
+    }
+  }
+
+  if (!conversation.isTest && !isWindowOpen(conversation.lastInboundAt)) {
+    await applyHandoff(conversationId, organizationId, "ventana");
+    return;
+  }
+  
   if (lastInbound.waMessageId?.startsWith("tg_")) {
     const parts = lastInbound.waMessageId.split("_");
     const chatId = parts[1];

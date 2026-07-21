@@ -256,3 +256,27 @@ export async function deleteWebhook(opts?: {
   });
 }
 
+export interface TelegramBotCommand {
+  command: string;
+  description: string;
+}
+
+export const DEFAULT_TELEGRAM_COMMANDS: TelegramBotCommand[] = [
+  { command: "start", description: "Iniciar o reiniciar la conversación" },
+  { command: "menu", description: "Desplegar el menú principal de opciones" },
+  { command: "reset", description: "Limpiar estado y reiniciar asistente IA" },
+  { command: "humano", description: "Solicitar atención con un agente humano" },
+];
+
+export async function setMyCommands(opts: {
+  commands?: TelegramBotCommand[];
+  token?: string;
+}): Promise<boolean> {
+  return telegramRequest<boolean>("setMyCommands", {
+    token: opts.token,
+    body: {
+      commands: opts.commands ?? DEFAULT_TELEGRAM_COMMANDS,
+    },
+  });
+}
+
