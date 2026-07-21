@@ -113,10 +113,6 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
 
   const { organizationId } = conversation;
 
-  if (!conversation.aiEnabled || conversation.handoffAt) {
-    return;
-  }
-
   const profileRows = await db
     .select()
     .from(schema.agentProfile)
@@ -125,7 +121,6 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
 
   const profile = profileRows[0];
   if (!profile) return;
-  if (!conversation.isTest && !profile.enabled) return;
 
   const history = await db
     .select()
@@ -143,14 +138,23 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   if (lastInbound.text) {
     const slashCmd = parseSlashCommand(lastInbound.text);
     if (slashCmd) {
-      const cmdResult = await processSlashCommand({
-        command: slashCmd,
-        conversation,
-        lastInboundWaId: lastInbound.waMessageId,
-      });
-      if (cmdResult.handled) return;
+      // /start y /reset se permiten siempre incluso si la conversación estaba en handoff humano
+      if (!conversation.handoffAt || slashCmd === "start" || slashCmd === "reset") {
+        const cmdResult = await processSlashCommand({
+          command: slashCmd,
+          conversation,
+          lastInboundWaId: lastInbound.waMessageId,
+        });
+        if (cmdResult.handled) return;
+      }
     }
   }
+
+  if (!conversation.aiEnabled || conversation.handoffAt) {
+    return;
+  }
+
+  if (!conversation.isTest && !profile.enabled) return;
 
   if (!isAiConfigured()) return;
 
