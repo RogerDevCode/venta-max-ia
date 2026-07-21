@@ -107,10 +107,18 @@ export async function processSlashCommand(input: {
         data: { conversation: { id: conversationId } },
       });
 
-      const welcomeText =
-        `¡Hola! Soy tu asistente de VentaMaxIA. 🤖\n\n` +
-        `He reiniciado la conversación. ¿En qué te puedo ayudar hoy?\n\n` +
-        `Puedes escribirme lo que buscas o elegir una opción del menú.`;
+      const profileRows = await db
+        .select()
+        .from(schema.agentProfile)
+        .where(scoped(schema.agentProfile.organizationId, organizationId))
+        .limit(1);
+      const profile = profileRows[0];
+
+      const welcomeText = profile?.greeting?.trim()
+        ? profile.greeting.trim()
+        : `¡Hola! Soy ${profile?.name || "tu asistente"} de VentaMaxIA. 🤖\n\n` +
+          `He reiniciado la conversación. ¿En qué te puedo ayudar hoy?\n\n` +
+          `Puedes escribirme lo que buscas o elegir una opción del menú.`;
 
       const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
       if (isTelegram) {
