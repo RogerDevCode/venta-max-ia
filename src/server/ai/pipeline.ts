@@ -45,7 +45,7 @@ function coalesceMap(): Map<string, CoalesceEntry> {
 }
 
 /** Punto de entrada con debounce (mensajes entrantes reales). */
-export function scheduleAgentTurn(conversationId: string): void {
+export function scheduleAgentTurn(conversationId: string, immediate = false): void {
   const map = coalesceMap();
   const entry = map.get(conversationId) ?? {
     timer: null,
@@ -59,7 +59,12 @@ export function scheduleAgentTurn(conversationId: string): void {
     return;
   }
   if (entry.timer) clearTimeout(entry.timer);
-  const delay = getEnv().AGENT_COALESCE_MS;
+  const delay = immediate ? 0 : getEnv().AGENT_COALESCE_MS;
+  if (delay === 0) {
+    entry.timer = null;
+    void executeTurn(conversationId);
+    return;
+  }
   entry.timer = setTimeout(() => {
     entry.timer = null;
     void executeTurn(conversationId);

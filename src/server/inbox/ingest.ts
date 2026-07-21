@@ -7,6 +7,7 @@ import type { WebhookValue } from "@/server/inbox/webhook";
 import { applyStatusUpdate } from "@/server/inbox/status";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
 import { maybeRunAgentTurn } from "@/server/ai/trigger";
+import { parseSlashCommand } from "@/server/ai/commands";
 
 /** Tipos de contenido soportados; el resto se ignora sin error. */
 const SUPPORTED_TYPES = new Set([
@@ -193,12 +194,8 @@ export async function ingestInboundMessage(input: {
     type: "message.new",
     data: { conversationId: conversation.id, message: serializeMessage(message) },
   });
-  publish(organizationId, {
-    type: "conversation.updated",
-    data: { conversation: { id: conversation.id } },
-  });
-
-  await maybeRunAgentTurn(conversation.id);
+  const isImmediate = parseSlashCommand(input.text) !== null || input.waMessageId.startsWith("tg_cb_");
+  await maybeRunAgentTurn(conversation.id, isImmediate);
 }
 
 function toDate(timestamp: string): Date {
