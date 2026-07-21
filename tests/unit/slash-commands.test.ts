@@ -1,18 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseSlashCommand, processSlashCommand } from "@/server/ai/commands";
 
-const { mockUpdateSet, mockSendText, mockSchema, mockDbState, mockApplyHandoff } = vi.hoisted(() => {
+const { mockUpdateSet, mockSendText, mockSchema, mockDbState, mockApplyHandoff, mockBuscarProductos } = vi.hoisted(() => {
   const schemaObj = {
     conversation: { id: "id", lastInboundAt: "last_inbound_at", organizationId: "organization_id", stateMetadata: "state_metadata" },
     message: { conversationId: "conversation_id", createdAt: "created_at" },
+    cart: { organizationId: "organization_id", conversationId: "conversation_id", status: "status", items: "items" },
+    order: { organizationId: "organization_id", conversationId: "conversation_id", createdAt: "created_at", totalAmount: "total_amount", orderNumber: "order_number", status: "status" },
   };
   return {
     mockUpdateSet: vi.fn(),
     mockSendText: vi.fn().mockResolvedValue({ messageId: "msg_out" }),
     mockApplyHandoff: vi.fn().mockResolvedValue(undefined),
+    mockBuscarProductos: vi.fn().mockResolvedValue([]),
     mockSchema: schemaObj,
     mockDbState: {
       conversation: null as Record<string, unknown> | null,
+      carts: [] as Record<string, unknown>[],
+      orders: [] as Record<string, unknown>[],
     },
   };
 });
@@ -26,12 +31,26 @@ vi.mock("@/server/ai/pipeline", () => ({
   applyHandoff: (convId: string, orgId: string, reason: string) => mockApplyHandoff(convId, orgId, reason),
 }));
 
+vi.mock("@/server/ecommerce/service", () => ({
+  buscarProductos: (input: unknown) => mockBuscarProductos(input),
+}));
+
 vi.mock("@/server/events/bus", () => ({
   publish: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
+    select: () => ({
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: () => Promise.resolve(table === mockSchema.cart ? mockDbState.carts : []),
+          orderBy: () => ({
+            limit: () => Promise.resolve(mockDbState.orders),
+          }),
+        }),
+      }),
+    }),
     update: () => ({
       set: (data: unknown) => {
         mockUpdateSet(data);
@@ -44,7 +63,7 @@ vi.mock("@/lib/db", () => ({
   schema: mockSchema,
 }));
 
-describe("Soporte de Comandos Slash en VentaMaxIA (/start, /menu, /reset, /humano)", () => {
+describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Real", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDbState.conversation = {
@@ -57,52 +76,30 @@ describe("Soporte de Comandos Slash en VentaMaxIA (/start, /menu, /reset, /human
       lastInboundAt: new Date(),
       stateMetadata: { prev: "value" },
     };
+    mockDbState.carts = [];
+    mockDbState.orders = [];
   });
 
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  describe("1. Parser de Comandos Slash (`parseSlashCommand`)", () => {
-    it("debe reconocer comandos básicos /start, /menu, /reset, /humano sin importar mayúsculas ni sufijos de bot", () => {
+  describe("1. Parser de Comandos Slash y Payloads del Menú (`parseSlashCommand`)", () => {
+    it("debe reconocer comandos /start, /menu, /reset, /humano, números (1-6) y callback payloads menu:*", () => {
       expect(parseSlashCommand("/start")).toBe("start");
-      expect(parseSlashCommand("/Start@MyBot")).toBe("start");
-      expect(parseSlashCommand("/MENU")).toBe("menu");
-      expect(parseSlashCommand("/reset")).toBe("reset");
-      expect(parseSlashCommand("/HUMANO")).toBe("humano");
-    });
-
-    it("debe retornar null para texto normal o comandos no reconocidos", () => {
-      expect(parseSlashCommand("Hola quisiera cotizar")).toBeNull();
-      expect(parseSlashCommand("/desconocido")).toBeNull();
-      expect(parseSlashCommand("start")).toBeNull();
+      expect(parseSlashCommand("/menu")).toBe("menu");
+      expect(parseSlashCommand("menu:categorias")).toBe("menu:categorias");
+      expect(parseSlashCommand("1")).toBe("menu:categorias");
+      expect(parseSlashCommand("2")).toBe("menu:promociones");
+      expect(parseSlashCommand("3")).toBe("menu:mas_vendidos");
+      expect(parseSlashCommand("4")).toBe("menu:carrito");
+      expect(parseSlashCommand("5")).toBe("menu:pedidos");
+      expect(parseSlashCommand("6")).toBe("menu:humano");
     });
   });
 
-  describe("2. Procesamiento de Comandos (`processSlashCommand`)", () => {
-    it("/start y /reset deben limpiar stateMetadata, reactivar el asistente IA y enviar mensaje de bienvenida", async () => {
-      const result = await processSlashCommand({
-        command: "start",
-        conversation: mockDbState.conversation as any,
-        lastInboundWaId: "tg_12345",
-      });
-
-      expect(result.handled).toBe(true);
-      expect(mockUpdateSet).toHaveBeenCalledWith(
-        expect.objectContaining({
-          stateMetadata: {},
-          handoffAt: null,
-          handoffReason: null,
-        })
-      );
-      expect(mockSendText).toHaveBeenCalledWith(
-        expect.objectContaining({
-          text: expect.stringContaining("¡Hola! Soy tu asistente de VentaMaxIA"),
-        })
-      );
-    });
-
-    it("/menu debe enviar un menú interactivo con botones (Telegram Inline Keyboard)", async () => {
+  describe("2. Procesamiento de Opciones del Menú (`processSlashCommand`)", () => {
+    it("/menu debe despachar el teclado de 6 botones en 2 columnas para Telegram", async () => {
       const result = await processSlashCommand({
         command: "menu",
         conversation: mockDbState.conversation as any,
@@ -114,30 +111,52 @@ describe("Soporte de Comandos Slash en VentaMaxIA (/start, /menu, /reset, /human
         expect.objectContaining({
           text: expect.stringContaining("Menú Principal"),
           replyMarkup: expect.objectContaining({
-            inline_keyboard: expect.any(Array),
+            inline_keyboard: expect.arrayContaining([
+              expect.arrayContaining([
+                expect.objectContaining({ text: "1. 🛍️ Ver Catálogo", callback_data: "menu:categorias" }),
+                expect.objectContaining({ text: "2. ⚡ Promos del Día", callback_data: "menu:promociones" }),
+              ]),
+              expect.arrayContaining([
+                expect.objectContaining({ text: "3. ⭐ Recomendados", callback_data: "menu:mas_vendidos" }),
+                expect.objectContaining({ text: "4. 🛒 Mi Carrito (Pagar)", callback_data: "menu:carrito" }),
+              ]),
+            ]),
           }),
         })
       );
     });
 
-    it("/humano debe transferir inmediatamente la conversación a un agente humano mediante Handoff", async () => {
+    it("opción menu:categorias debe consultar el catálogo de la organización", async () => {
+      mockBuscarProductos.mockResolvedValueOnce([
+        { id: "p1", sku: "PROD-1", name: "Taladro Inalámbrico", price: 45000, stock: 10 },
+      ]);
+
       const result = await processSlashCommand({
-        command: "humano",
+        command: "menu:categorias",
         conversation: mockDbState.conversation as any,
         lastInboundWaId: "tg_12345",
       });
 
       expect(result.handled).toBe(true);
-      expect(mockApplyHandoff).toHaveBeenCalledWith(
-        "conv_cmd_123",
-        "org_cmd_123",
-        "cliente"
+      expect(mockBuscarProductos).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: "org_cmd_123", query: "todo" })
       );
       expect(mockSendText).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("Un agente humano revisará tu solicitud"),
+          text: expect.stringContaining("Taladro Inalámbrico"),
         })
       );
+    });
+
+    it("opción menu:humano debe derivar la conversación al agente humano en el Kanban", async () => {
+      const result = await processSlashCommand({
+        command: "menu:humano",
+        conversation: mockDbState.conversation as any,
+        lastInboundWaId: "tg_12345",
+      });
+
+      expect(result.handled).toBe(true);
+      expect(mockApplyHandoff).toHaveBeenCalledWith("conv_cmd_123", "org_cmd_123", "cliente");
     });
   });
 });

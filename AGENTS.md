@@ -48,6 +48,7 @@ Todo agente de IA o desarrollador operando en este repositorio **debe cumplir es
 3. **Idempotencia (Principio IV):** Toda ingesta desde webhooks verifica unicidad (`telegramMessageId` / `waMessageId` UNIQUE) para no duplicar acciones en reintentos de red.
 4. **Sandbox del Laboratorio:** Las conversaciones de prueba (`is_test: true`) **jamás** envían peticiones reales a Telegram o WhatsApp. Existe un bloqueo en la capa saliente (`send.ts`).
 5. **Calidad y Verificación en Vivo (Principios V y IX):** Una tarea no está terminada hasta pasar el ciclo: **Paso → Test (Vitest/Playwright) → Verde (`PASS`)**. Prohibido delegar la prueba al usuario o dejar código optimista sin verificar.
+6. **Respetar Arquitectura de Grado Empresarial Multi-Tenant Real:** Todo componente, comando, menú o integración migrada desde `chatbot` o nuevos desarrollos debe cumplir estrictamente con el modelo multi-tenant asilado (`organization_id NOT NULL`, `scoped()`, `org-first` index), sin compartir estado ni almacenamiento global entre organizaciones.
 
 ---
 
