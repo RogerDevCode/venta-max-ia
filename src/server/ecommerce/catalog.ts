@@ -22,7 +22,7 @@ export class CatalogError extends Error {
 
 export type CategoryInput = { name: string; description?: string | null };
 export type ProductInput = {
-  sku: string;
+  sku?: string | null;
   name: string;
   description?: string | null;
   price: number;
@@ -32,7 +32,7 @@ export type ProductInput = {
 };
 
 function cleanName(name: string) {
-  return name.trim();
+  return name.trim().toLocaleLowerCase("es").replace(/(^|\s)\S/g, (letter) => letter.toLocaleUpperCase("es"));
 }
 
 export async function ensureGeneralCategory(organizationId: string) {
@@ -149,7 +149,7 @@ export async function listCatalogProducts(organizationId: string, categoryId?: s
 export async function createProduct(organizationId: string, input: ProductInput) {
   await assertCategory(organizationId, input.categoryId);
   try {
-    const rows = await getDb().insert(schema.product).values({ id: newId("product"), organizationId, ...input, description: input.description?.trim() || null, sku: input.sku.trim(), name: input.name.trim() }).returning();
+    const rows = await getDb().insert(schema.product).values({ id: newId("product"), organizationId, ...input, description: input.description?.trim() || null, sku: input.sku?.trim() || null, name: input.name.trim() }).returning();
     if (!rows[0]) throw new Error("No se pudo crear el producto");
     return rows[0];
   } catch { throw new CatalogError("duplicate_sku"); }
@@ -158,7 +158,7 @@ export async function createProduct(organizationId: string, input: ProductInput)
 export async function updateProduct(organizationId: string, id: string, input: ProductInput) {
   await assertCategory(organizationId, input.categoryId);
   try {
-    const rows = await getDb().update(schema.product).set({ ...input, description: input.description?.trim() || null, sku: input.sku.trim(), name: input.name.trim(), updatedAt: new Date() })
+    const rows = await getDb().update(schema.product).set({ ...input, description: input.description?.trim() || null, sku: input.sku?.trim() || null, name: input.name.trim(), updatedAt: new Date() })
       .where(scoped(schema.product.organizationId, organizationId, eq(schema.product.id, id))).returning();
     if (!rows[0]) throw new CatalogError("product_not_found");
     return rows[0];

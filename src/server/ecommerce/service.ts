@@ -138,7 +138,7 @@ export async function agregarAlCarrito(input: {
     items[idx]!.quantity += cantidad;
   } else {
     items.push({
-      sku: producto.sku,
+      sku: producto.sku ?? producto.id,
       name: producto.name,
       unitPrice: producto.price,
       quantity: cantidad,
