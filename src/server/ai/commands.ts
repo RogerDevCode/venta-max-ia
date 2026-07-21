@@ -4,7 +4,7 @@ import { scoped } from "@/lib/db/tenant";
 import { publish } from "@/server/events/bus";
 import { sendText } from "@/server/inbox/send";
 import { applyHandoff } from "@/server/ai/pipeline";
-import { buscarProductos } from "@/server/ecommerce/service";
+import { buscarProductos, listarCategorias, listCatalogProducts } from "@/server/ecommerce/service";
 
 export type SlashCommandType =
   | "start"
@@ -16,7 +16,11 @@ export type SlashCommandType =
   | "menu:mas_vendidos"
   | "menu:carrito"
   | "menu:pedidos"
-  | "menu:humano";
+  | "menu:humano"
+  | "catalog:return"
+  | "catalog:home"
+  | `catalog:category:${string}`
+  | `catalog:number:${string}`;
 
 /** Parsea un texto entrante o payload de botón callback para detectar comandos y menús. */
 export function parseSlashCommand(text?: string | null): SlashCommandType | null {
@@ -24,9 +28,11 @@ export function parseSlashCommand(text?: string | null): SlashCommandType | null
   const clean = text.trim();
 
   // 1. Manejo de Callback Payload exacto del menú
-  if (clean.startsWith("menu:")) {
+  if (clean.startsWith("menu:") || clean.startsWith("catalog:category:")) {
     return clean as SlashCommandType;
   }
+  if (clean === "r" || clean === "R" || clean === "catalog:return") return "catalog:return";
+  if (clean === "i" || clean === "I" || clean === "catalog:home") return "catalog:home";
 
   // 2. Manejo de Comandos Slash clásicos (/start, /menu, /reset, /humano)
   if (clean.startsWith("/")) {
@@ -39,13 +45,7 @@ export function parseSlashCommand(text?: string | null): SlashCommandType | null
   }
 
   // 3. Manejo de selección numérica por texto (1..6)
-  if (clean === "1") return "menu:categorias";
-  if (clean === "2") return "menu:promociones";
-  if (clean === "3") return "menu:mas_vendidos";
-  if (clean === "4") return "menu:carrito";
-  if (clean === "5") return "menu:pedidos";
-  if (clean === "6") return "menu:humano";
-
+  if (/^[1-9]$/.test(clean)) return `catalog:number:${clean}`;
   return null;
 }
 
@@ -104,6 +104,43 @@ export async function processSlashCommand(input: {
       type: "conversation.updated",
       data: { conversation: { id: conversationId } },
     });
+  }
+
+  async function showCategories() {
+    const categorias = await listarCategorias(organizationId);
+    await updateState({ current_state: "menu:catalog", active_step: "viewing_catalog", catalogCategoryIds: categorias.map((c) => c.id), catalogCategoryId: null });
+    const text = `📁 *Categorías de Productos*:\n${categorias.map((c, index) => `${index + 1}. *${c.name}*${c.description ? `: ${c.description}` : ""}`).join("\n")}\n\nElige una categoría con su botón o número.`;
+    const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
+    await deliverCommandReply(conversation, text, isTelegram ? { replyMarkup: { inline_keyboard: categorias.map((c, index) => [{ text: `${index + 1}. ${c.name}`, callback_data: `catalog:category:${c.id}` }]) } } : undefined);
+  }
+
+  if (command === "catalog:return") { await showCategories(); return { handled: true }; }
+  if (command === "catalog:home") {
+    await updateState({ current_state: "menu:main", active_step: "main_menu", catalogCategoryIds: null, catalogCategoryId: null });
+    const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
+    await deliverCommandReply(conversation, "📌 *Menú Principal — VentaMaxIA*\nSelecciona una opción:", isTelegram ? { replyMarkup: buildMainMenuMarkup() } : undefined);
+    return { handled: true };
+  }
+  let categoryId: string | null = null;
+  if (command.startsWith("catalog:category:")) categoryId = command.slice("catalog:category:".length);
+  if (command.startsWith("catalog:number:")) {
+    const number = Number(command.slice("catalog:number:".length));
+    const ids = Array.isArray(currentState.catalogCategoryIds) ? currentState.catalogCategoryIds.filter((id): id is string => typeof id === "string") : [];
+    if (currentState.current_state === "menu:catalog" && number > 0 && number <= ids.length) categoryId = ids[number - 1] ?? null;
+    else {
+      const main = ["menu:categorias", "menu:promociones", "menu:mas_vendidos", "menu:carrito", "menu:pedidos", "menu:humano"][number - 1];
+      if (main) return processSlashCommand({ ...input, command: main as SlashCommandType });
+    }
+  }
+  if (categoryId) {
+    try {
+      const products = await listCatalogProducts(organizationId, categoryId);
+      await updateState({ current_state: "menu:catalog", active_step: "viewing_category", catalogCategoryId: categoryId });
+      const text = products.length ? `🛍️ *Productos*:\n${products.map((p) => `• ${p.name} (${p.sku}): $${(p.price / 100).toFixed(2)} (Stock: ${p.stock})`).join("\n")}\n\nR. Retornar · I. Inicio` : "Esta categoría no tiene productos activos.\n\nR. Retornar · I. Inicio";
+      const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
+      await deliverCommandReply(conversation, text, isTelegram ? { replyMarkup: { inline_keyboard: [[{ text: "↩ Retornar", callback_data: "catalog:return" }, { text: "⌂ Inicio", callback_data: "catalog:home" }]] } } : undefined);
+    } catch { await showCategories(); }
+    return { handled: true };
   }
 
   switch (command) {
@@ -173,12 +210,7 @@ export async function processSlashCommand(input: {
     }
 
     case "menu:categorias": {
-      await updateState({ current_state: "menu:catalog", active_step: "viewing_catalog" });
-      const productos = await buscarProductos({ organizationId, query: "todo" });
-      const text = productos.length > 0
-        ? `🛍️ *Catálogo de Productos*:\n` + productos.map((p) => `• ${p.name} (${p.sku}): $${(p.price / 100).toFixed(2)} (Stock: ${p.stock})`).join("\n")
-        : `No hay productos activos en el catálogo de este negocio actualmente.`;
-      await deliverCommandReply(conversation, text);
+      await showCategories();
       return { handled: true };
     }
 
@@ -281,6 +313,7 @@ export async function processSlashCommand(input: {
       return { handled: true };
     }
   }
+  return { handled: false };
 }
 
 async function deliverCommandReply(

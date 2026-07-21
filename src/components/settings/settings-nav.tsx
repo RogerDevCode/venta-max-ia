@@ -8,6 +8,7 @@ const TABS = [
   { href: "/settings/whatsapp", label: "WhatsApp" },
   { href: "/settings/branding", label: "Marca" },
   { href: "/settings/templates", label: "Plantillas" },
+  { href: "/settings/catalog", label: "Catálogo" },
   { href: "/settings/team", label: "Equipo" },
 ] as const;
 

@@ -1,5 +1,4 @@
 import { scheduleAgentTurn } from "@/server/ai/pipeline";
-import { isAiConfigured } from "@/lib/env";
 
 /**
  * Punto de enganche del turno del agente tras la ingesta de un mensaje

@@ -440,10 +440,16 @@ export const category = pgTable(
       .references(() => organization.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     description: text("description"),
+    /** Categoría de respaldo, gestionada exclusivamente por el dominio. */
+    isGeneral: boolean("is_general").notNull().default(false),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (t) => [index("category_org_name_idx").on(t.organizationId, t.name)]
+  (t) => [
+    index("category_org_name_idx").on(t.organizationId, t.name),
+    uniqueIndex("category_org_name_uq").on(t.organizationId, t.name),
+    uniqueIndex("category_org_id_uq").on(t.organizationId, t.id),
+  ]
 );
 
 export const product = pgTable(
@@ -453,9 +459,7 @@ export const product = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    categoryId: text("category_id").references(() => category.id, {
-      onDelete: "set null",
-    }),
+    categoryId: text("category_id").notNull(),
     sku: text("sku").notNull(),
     name: text("name").notNull(),
     description: text("description"),

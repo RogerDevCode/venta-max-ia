@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseSlashCommand, processSlashCommand } from "@/server/ai/commands";
 
-const { mockUpdateSet, mockSendText, mockSchema, mockDbState, mockApplyHandoff, mockBuscarProductos } = vi.hoisted(() => {
+const { mockUpdateSet, mockSendText, mockSchema, mockDbState, mockApplyHandoff, mockBuscarProductos, mockListarCategorias } = vi.hoisted(() => {
   const schemaObj = {
     conversation: { id: "id", lastInboundAt: "last_inbound_at", organizationId: "organization_id", stateMetadata: "state_metadata" },
     message: { conversationId: "conversation_id", createdAt: "created_at" },
@@ -14,6 +14,7 @@ const { mockUpdateSet, mockSendText, mockSchema, mockDbState, mockApplyHandoff, 
     mockSendText: vi.fn().mockResolvedValue({ messageId: "msg_out" }),
     mockApplyHandoff: vi.fn().mockResolvedValue(undefined),
     mockBuscarProductos: vi.fn().mockResolvedValue([]),
+    mockListarCategorias: vi.fn().mockResolvedValue([]),
     mockSchema: schemaObj,
     mockDbState: {
       conversation: null as Record<string, unknown> | null,
@@ -35,6 +36,8 @@ vi.mock("@/server/ai/pipeline", () => ({
 
 vi.mock("@/server/ecommerce/service", () => ({
   buscarProductos: (input: unknown) => mockBuscarProductos(input),
+  listarCategorias: (...args: unknown[]) => mockListarCategorias(...args),
+  listCatalogProducts: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("@/server/events/bus", () => ({
@@ -98,12 +101,12 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       expect(parseSlashCommand("/start")).toBe("start");
       expect(parseSlashCommand("/menu")).toBe("menu");
       expect(parseSlashCommand("menu:categorias")).toBe("menu:categorias");
-      expect(parseSlashCommand("1")).toBe("menu:categorias");
-      expect(parseSlashCommand("2")).toBe("menu:promociones");
-      expect(parseSlashCommand("3")).toBe("menu:mas_vendidos");
-      expect(parseSlashCommand("4")).toBe("menu:carrito");
-      expect(parseSlashCommand("5")).toBe("menu:pedidos");
-      expect(parseSlashCommand("6")).toBe("menu:humano");
+      expect(parseSlashCommand("1")).toBe("catalog:number:1");
+      expect(parseSlashCommand("2")).toBe("catalog:number:2");
+      expect(parseSlashCommand("3")).toBe("catalog:number:3");
+      expect(parseSlashCommand("4")).toBe("catalog:number:4");
+      expect(parseSlashCommand("5")).toBe("catalog:number:5");
+      expect(parseSlashCommand("6")).toBe("catalog:number:6");
     });
   });
 
@@ -111,7 +114,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
     it("/menu debe despachar el teclado de 6 botones en 2 columnas para Telegram", async () => {
       const result = await processSlashCommand({
         command: "menu",
-        conversation: mockDbState.conversation as any,
+        conversation: mockDbState.conversation as never,
         lastInboundWaId: "tg_12345",
       });
 
@@ -136,23 +139,21 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
     });
 
     it("opción menu:categorias debe consultar el catálogo de la organización", async () => {
-      mockBuscarProductos.mockResolvedValueOnce([
-        { id: "p1", sku: "PROD-1", name: "Taladro Inalámbrico", price: 45000, stock: 10 },
+      mockListarCategorias.mockResolvedValueOnce([
+        { id: "cat_1", name: "Herramientas", description: null, isGeneral: false },
       ]);
 
       const result = await processSlashCommand({
         command: "menu:categorias",
-        conversation: mockDbState.conversation as any,
+        conversation: mockDbState.conversation as never,
         lastInboundWaId: "tg_12345",
       });
 
       expect(result.handled).toBe(true);
-      expect(mockBuscarProductos).toHaveBeenCalledWith(
-        expect.objectContaining({ organizationId: "org_cmd_123", query: "todo" })
-      );
+      expect(mockListarCategorias).toHaveBeenCalledWith("org_cmd_123");
       expect(mockSendText).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: expect.stringContaining("Taladro Inalámbrico"),
+          text: expect.stringContaining("Herramientas"),
         })
       );
     });
@@ -160,7 +161,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
     it("opción menu:humano / 6 debe derivar la conversación al agente humano y enviar mensaje según disponibilidad (humanAvailable)", async () => {
       const result = await processSlashCommand({
         command: "menu:humano",
-        conversation: mockDbState.conversation as any,
+        conversation: mockDbState.conversation as never,
         lastInboundWaId: "tg_12345",
       });
 

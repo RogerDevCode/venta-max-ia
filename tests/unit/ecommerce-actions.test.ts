@@ -196,7 +196,7 @@ describe("Simulación E2E de Compra en E-Commerce con IA (Paso 5.2)", () => {
       product: {
         id: "prd_1",
         organizationId: "org_ecom",
-        categoryId: null,
+        categoryId: "cat_general",
         sku: "SKU-DEN-01",
         name: "Servicio Dental Urgencia",
         description: null,

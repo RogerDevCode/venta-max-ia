@@ -5,16 +5,6 @@ import dns from "node:dns";
 // Como algunas rutas IPv6 caen en timeout en Node/undici, priorizamos resolución IPv4 a nivel de módulo.
 try {
   dns.setDefaultResultOrder("ipv4first");
-  const origLookup = dns.lookup;
-  dns.lookup = ((domain: any, options: any, callback: any) => {
-    if (typeof options === "object" && options !== null) {
-      if (!options.family) options.family = 4;
-    } else if (typeof options === "function") {
-      callback = options;
-      options = { family: 4 };
-    }
-    return origLookup(domain, options, callback);
-  }) as typeof dns.lookup;
 } catch {}
 
 /**
@@ -279,4 +269,3 @@ export async function setMyCommands(opts: {
     },
   });
 }
-

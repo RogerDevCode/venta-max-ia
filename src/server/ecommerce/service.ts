@@ -2,6 +2,7 @@ import { and, eq, ilike, or, type SQL } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { listCatalogProducts, listCategories } from "@/server/ecommerce/catalog";
 
 export interface CartItem {
   sku: string;
@@ -9,6 +10,15 @@ export interface CartItem {
   unitPrice: number;
   name: string;
 }
+
+/**
+ * Obtiene las categorías registradas en la organización.
+ */
+export async function listarCategorias(organizationId: string) {
+  return listCategories(organizationId);
+}
+
+export { listCatalogProducts };
 
 /**
  * Busca productos en el catálogo de la organización por nombre, SKU o descripción.

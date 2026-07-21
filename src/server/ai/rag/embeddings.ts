@@ -63,7 +63,7 @@ export function chunkText(
  */
 export async function generateEmbedding(
   text: string,
-  opts?: { model?: string; token?: string }
+  opts?: { model?: string; token?: string; provider?: string }
 ): Promise<number[]> {
   const clean = text.trim();
   if (!clean) {

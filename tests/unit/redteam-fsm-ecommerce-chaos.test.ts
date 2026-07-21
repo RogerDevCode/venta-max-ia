@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentAction, resolveStage, degradeAction } from "@/server/ai/actions";
-import { buscarProductos, agregarAlCarrito, confirmarPedido } from "@/server/ecommerce/service";
+import { agregarAlCarrito, confirmarPedido } from "@/server/ecommerce/service";
 import { runAgentTurn } from "@/server/ai/pipeline";
 
 // Mocks para simular base de datos y aislamiento del FSM / E-Commerce
