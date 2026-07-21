@@ -49,14 +49,16 @@ Todo agente de IA o desarrollador operando en este repositorio **debe cumplir es
 4. **Sandbox del Laboratorio:** Las conversaciones de prueba (`is_test: true`) **jamás** envían peticiones reales a Telegram o WhatsApp. Existe un bloqueo en la capa saliente (`send.ts`).
 5. **Calidad y Verificación en Vivo (Principios V y IX):** Una tarea no está terminada hasta pasar el ciclo: **Paso → Test (Vitest/Playwright) → Verde (`PASS`)**. Prohibido delegar la prueba al usuario o dejar código optimista sin verificar.
 6. **Respetar Arquitectura de Grado Empresarial Multi-Tenant Real:** Todo componente, comando, menú o integración migrada desde `chatbot` o nuevos desarrollos debe cumplir strictly con el modelo multi-tenant aislado (`organization_id NOT NULL`, `scoped()`, `org-first` index), sin compartir estado ni almacenamiento global entre organizaciones.
-7. **Procesamiento Paralelo de Baja Latencia y Concurrencia Controlada (Semáforos / Mutex):**
+7. **Procesamiento Paralelo de Baja Latencia, Garantía de Ejecución y Concurrencia Controlada (Semáforos / Mutex):**
+   - **Garantía Obligatoria de Ejecución Completa:**
+     - Todo proceso o tarea lanzada en paralelo o en segundo plano DEBE garantizar su ejecución y cierre completo. Queda estrictamente prohibido abandonar promesas "a su suerte" sin captura de errores; las tareas en segundo plano DEBEN llevar manejo explícito de excepciones (`.catch(logError)`) o control de concurrencia agrupado (`Promise.all` / `Promise.allSettled`) para asegurar que **ningún proceso en paralelo se pierda, se cancele silenciosamente o deje recursos colgados**.
    - **Cuándo ejecutar en paralelo (no bloqueante / `Promise.all` / async background):**
-     - Toda llamada a APIs de terceros o efectos secundarios independientes sin dependencia de datos directa (ej. `answerCallbackQuery`, `sendChatAction` typing, publicar eventos SSE `publish()`, métricas) DEBE ejecutarse en paralelo o en segundo plano (*fire-and-forget* sin `await` bloqueante) para no sumar latencias de red en serie.
+     - Toda llamada a APIs de terceros o efectos secundarios independientes sin dependencia de datos directa (ej. `answerCallbackQuery`, `sendChatAction` typing, publicar eventos SSE `publish()`, métricas) DEBE ejecutarse en paralelo o en segundo plano garantizado (*fire-and-forget* con `.catch()` defensivo) para no sumar latencias de red en serie.
      - Lecturas a base de datos o servicios independientes DEBEN agruparse mediante `Promise.all([fetchA(), fetchB()])`.
    - **Cuándo ejecutar en serie (bloqueante / transaccional):**
      - Operaciones con dependencia de datos directa (ej. verificar la existencia de un `contact_id` antes de crear una `conversation`) o transacciones SQL secuenciales con escrituras mutuamente dependientes.
    - **Control de Concurrencia (Semáforos / Mutex):**
-     - Toda ráfaga de peticiones sobre un mismo recurso o entidad (ej. dobles clics en botones de una misma conversación) DEBE protegerse con semáforos o locks *in-process* por clave (ej. `coalesceMap` por `conversation_id`), procesando la primera solicitud y descartando o serializando solicitudes duplicadas para evitar *race conditions* y consumo innecesario de recursos.
+     - Toda ráfaga de peticiones sobre un mismo recurso o entidad (ej. dobles clics en botones de una misma conversación) DEBE protegerse con semáforos o locks *in-process* por clave (ej. `coalesceMap` por `conversation_id`), procesando la primera solicitud y serializando/descartando solicitudes duplicadas de forma controlada para evitar *race conditions* y consumo innecesario de recursos.
 
 ---
 
