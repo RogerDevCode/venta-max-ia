@@ -127,7 +127,7 @@ export function AppNav({
           )}
           strokeWidth={1.7}
         />
-        Ajustes
+        Configuración
       </Link>
 
       <div className="mt-1 flex items-center gap-2.5 rounded-sm px-2.5 py-2 hover:bg-accent">
