@@ -270,12 +270,14 @@ export async function processSlashCommand(input: {
       const profile = profileRows[0];
       const humanAvailable = profile?.humanAvailable ?? true;
 
-      const responseText = humanAvailable
-        ? `Un agente humano revisará tu solicitud a la brevedad. Gracias por comunicarte con nosotros. 👋`
-        : `En este momento no contamos con un agente humano disponible en línea. Hemos tomado tu solicitud y te responderemos tan pronto como nos conectemos. ¡Gracias por tu paciencia! 🙏`;
-
-      await deliverCommandReply(conversation, responseText);
-      await applyHandoff(conversationId, organizationId, "cliente");
+      if (humanAvailable) {
+        const responseText = `Un agente humano revisará tu solicitud a la brevedad. Gracias por comunicarte con nosotros. 👋`;
+        await deliverCommandReply(conversation, responseText);
+        await applyHandoff(conversationId, organizationId, "cliente");
+      } else {
+        const responseText = `En este momento no contamos con un agente humano disponible en línea. Hemos tomado nota de tu solicitud para nuestro equipo, pero mientras tanto ¡puedes seguir consultándome cualquier duda o catálogo! 🙏`;
+        await deliverCommandReply(conversation, responseText);
+      }
       return { handled: true };
     }
   }

@@ -179,7 +179,14 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
 
   // Patrón de respaldo ANTES del LLM (FR-022).
   if (lastInbound.text && matchesHandoffIntent(lastInbound.text)) {
-    await applyHandoff(conversationId, organizationId, "cliente");
+    if (profile.humanAvailable) {
+      await applyHandoff(conversationId, organizationId, "cliente");
+    } else {
+      await deliverReply(
+        conversation,
+        "En este momento no contamos con un agente humano disponible en línea. Hemos tomado nota de tu solicitud para nuestro equipo, pero mientras tanto ¡puedes seguir consultándome cualquier duda o catálogo! 🙏"
+      );
+    }
     return;
   }
 
@@ -219,7 +226,9 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     if (result.error === "not_configured") return;
     // Fallo persistente del proveedor o salida imposible → escalar (FR-022).
     console.error(`[agente] fallo del proveedor (raw): ${result.detail}`);
-    await applyHandoff(conversationId, organizationId, "error");
+    if (profile.humanAvailable) {
+      await applyHandoff(conversationId, organizationId, "error");
+    }
     return;
   }
 
@@ -254,10 +263,18 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       return;
     }
     case "handoff": {
-      if (action.farewell) {
-        await deliverReply(conversation, action.farewell);
+      if (profile.humanAvailable) {
+        if (action.farewell) {
+          await deliverReply(conversation, action.farewell);
+        }
+        await applyHandoff(conversationId, organizationId, "modelo");
+      } else {
+        await deliverReply(
+          conversation,
+          action.farewell ||
+            "En este momento no contamos con un agente humano disponible en línea. Hemos tomado nota de tu solicitud para nuestro equipo, pero mientras tanto ¡puedes seguir consultándome cualquier duda o catálogo! 🙏"
+        );
       }
-      await applyHandoff(conversationId, organizationId, "modelo");
       return;
     }
     case "actualizar_variable": {
