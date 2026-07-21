@@ -3,34 +3,35 @@
 @tailwind utilities;
 
 /*
-  Sistema de diseño "Atlas": modo claro sobrio (neutros fríos + un acento).
+  Sistema de diseño "Atlas": grafito medio (neutros fríos + un acento).
   Los tokens de acento (--accent*) se sobreescriben en runtime por el
   white-label de la organización (Configuración → Marca).
 */
 @layer base {
   :root {
-    /* Neutros (valores exactos del handoff) */
-    --bg: #ffffff;
-    --bg-subtle: #fbfbfc;
-    --bg-panel: #f8f8f9;
-    --bg-hover: #f4f4f5;
-    --text: #1a1a1e;
-    --text-2: #56565e;
-    --text-3: #8c8c95;
-    --text-4: #aeaeb6;
-    --border: #ecedf0;
-    --border-strong: #e0e1e6;
+    /* Grafito medio: superficies diferenciadas, sin blanco incandescente. */
+    --bg: #d7dfe6;
+    --bg-subtle: #cbd5df;
+    --bg-panel: #e3e9ee;
+    --surface: #f3f6f8;
+    --bg-hover: #d0d9e1;
+    --text: #18212b;
+    --text-2: #405061;
+    --text-3: #5d6d7e;
+    --text-4: #748396;
+    --border: #b9c5d0;
+    --border-strong: #96a6b6;
 
     /* Chat */
-    --chat-bg: #f4f5f7;
-    --bubble-out: #f2f5f8;
-    --bubble-out-text: #33414f;
+    --chat-bg: #dfe6ec;
+    --bubble-out: #edf2f6;
+    --bubble-out-text: #263747;
 
     /* Acento (default: azul acero apagado; white-label lo sobreescribe) */
     --accent: #3f5972;
     --accent-hover: #334a60;
-    --accent-soft: #dde5ee;
-    --accent-tint: #f3f6f9;
+    --accent-soft: #c7d4e0;
+    --accent-tint: #e6edf3;
     --accent-text: #2b4056;
     --bg-active: var(--accent-tint);
 
@@ -59,6 +60,16 @@
   body {
     @apply bg-background text-foreground antialiased;
     letter-spacing: -0.01em;
+  }
+  input,
+  textarea,
+  select {
+    background-color: var(--surface);
+    color: var(--text);
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
   ::-webkit-scrollbar {
     width: 8px;

@@ -39,11 +39,11 @@ const config: Config = {
           foreground: "var(--text)",
         },
         card: {
-          DEFAULT: "var(--bg)",
+          DEFAULT: "var(--surface)",
           foreground: "var(--text)",
         },
         popover: {
-          DEFAULT: "var(--bg)",
+          DEFAULT: "var(--surface)",
           foreground: "var(--text)",
         },
         brand: {
