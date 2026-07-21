@@ -23,7 +23,7 @@ const envSchema = z.object({
   META_GRAPH_API_VERSION: z.string().default("v25.0"),
   META_GRAPH_BASE_URL: z.string().url().default("https://graph.facebook.com"),
   TELEGRAM_ADMIN_BOT_TOKEN: z.string().optional(),
-  TELEGRAM_ADMIN_CHAT_ID: z.string().optional(),
+  TELEGRAM_ADMIN_ID: z.string().optional(),
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
   TELEGRAM_API_BASE_URL: z.string().url().default("https://api.telegram.org"),
   CLOUDFLARE_TUNNEL_TOKEN: z.string().optional(),
