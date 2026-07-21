@@ -84,13 +84,35 @@ export async function processSlashCommand(input: {
   const { organizationId, id: conversationId } = conversation;
   const db = getDb();
 
+  const currentState = (conversation.stateMetadata as Record<string, unknown>) ?? {};
+
+  async function updateState(newState: Record<string, unknown>) {
+    await db
+      .update(schema.conversation)
+      .set({
+        stateMetadata: { ...currentState, ...newState },
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          scoped(schema.conversation.organizationId, organizationId),
+          eq(schema.conversation.id, conversationId)
+        )
+      );
+
+    publish(organizationId, {
+      type: "conversation.updated",
+      data: { conversation: { id: conversationId } },
+    });
+  }
+
   switch (command) {
     case "start":
     case "reset": {
       await db
         .update(schema.conversation)
         .set({
-          stateMetadata: {},
+          stateMetadata: { current_state: "menu:main", active_step: "main_menu" },
           handoffAt: null,
           handoffReason: null,
           updatedAt: new Date(),
@@ -130,6 +152,7 @@ export async function processSlashCommand(input: {
     }
 
     case "menu": {
+      await updateState({ current_state: "menu:main", active_step: "main_menu" });
       const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
       const menuTitle = "📌 *Menú Principal — VentaMaxIA*\nSelecciona una opción:";
 
@@ -150,6 +173,7 @@ export async function processSlashCommand(input: {
     }
 
     case "menu:categorias": {
+      await updateState({ current_state: "menu:catalog", active_step: "viewing_catalog" });
       const productos = await buscarProductos({ organizationId, query: "todo" });
       const text = productos.length > 0
         ? `🛍️ *Catálogo de Productos*:\n` + productos.map((p) => `• ${p.name} (${p.sku}): $${(p.price / 100).toFixed(2)} (Stock: ${p.stock})`).join("\n")
@@ -159,6 +183,7 @@ export async function processSlashCommand(input: {
     }
 
     case "menu:promociones": {
+      await updateState({ current_state: "menu:promos", active_step: "viewing_promos" });
       const productos = await buscarProductos({ organizationId, query: "promo" });
       const text = productos.length > 0
         ? `⚡ *Promociones del Día*:\n` + productos.map((p) => `• ${p.name} (${p.sku}): $${(p.price / 100).toFixed(2)}`).join("\n")
@@ -168,6 +193,7 @@ export async function processSlashCommand(input: {
     }
 
     case "menu:mas_vendidos": {
+      await updateState({ current_state: "menu:recommended", active_step: "viewing_recommended" });
       const productos = await buscarProductos({ organizationId, query: "*" });
       const text = productos.length > 0
         ? `⭐ *Productos Mas Vendidos / Recomendados*:\n` + productos.map((p) => `• ${p.name} (${p.sku}): $${(p.price / 100).toFixed(2)}`).join("\n")
@@ -177,6 +203,7 @@ export async function processSlashCommand(input: {
     }
 
     case "menu:carrito": {
+      await updateState({ current_state: "menu:cart", active_step: "viewing_cart" });
       const cartRows = await db
         .select()
         .from(schema.cart)
@@ -205,6 +232,7 @@ export async function processSlashCommand(input: {
     }
 
     case "menu:pedidos": {
+      await updateState({ current_state: "menu:orders", active_step: "viewing_orders" });
       const orderRows = await db
         .select()
         .from(schema.order)
@@ -233,6 +261,7 @@ export async function processSlashCommand(input: {
 
     case "humano":
     case "menu:humano": {
+      await updateState({ current_state: "handoff:humano", active_step: "awaiting_human" });
       const profileRows = await db
         .select()
         .from(schema.agentProfile)
