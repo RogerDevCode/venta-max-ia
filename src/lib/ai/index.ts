@@ -29,25 +29,30 @@ export async function chatJson<T>(
     return {
       ok: false,
       error: "not_configured",
-      detail: "Sin OPENROUTER_API_TOKEN configurado",
+      detail: "Sin PROVIDER_API_TOKEN configurado",
     };
   }
   const env = getEnv();
-  const model =
+  const primaryModel =
     opts?.model ??
     (opts?.judge
-      ? (env.OPENROUTER_JUDGE_MODEL ?? env.OPENROUTER_MODEL)
-      : env.OPENROUTER_MODEL);
-  if (!model?.trim()) {
+      ? (env.PROVIDER_JUDGE_MODEL ?? env.OPENROUTER_JUDGE_MODEL ?? env.PROVIDER_MODEL ?? env.OPENROUTER_MODEL)
+      : (env.MODEL_NAME ?? env.PROVIDER_MODEL ?? env.OPENROUTER_MODEL));
+  const fallbackModel = opts?.judge
+    ? (env.PROVIDER_JUDGE_FALLBACK_MODEL ?? env.OPENROUTER_JUDGE_FALLBACK_MODEL ?? env.FALLBACK_MODEL_1)
+    : (env.FALLBACK_MODEL_1 ?? env.FALLBACK_MODEL_2);
+
+  if (!primaryModel?.trim()) {
     return {
       ok: false,
       error: "not_configured",
-      detail: "Sin OPENROUTER_MODEL configurado",
+      detail: "Sin PROVIDER_MODEL configurado",
     };
   }
 
   let lastDetail = "";
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const currentModel = (attempt > 1 && fallbackModel?.trim()) ? fallbackModel : primaryModel;
     const attemptMessages: ChatMessage[] =
       attempt === 1
         ? messages
@@ -60,10 +65,13 @@ export async function chatJson<T>(
             },
           ];
     try {
-      const raw = await callProvider(model, attemptMessages, opts?.timeoutMs);
+      const raw = await callProvider(currentModel, attemptMessages, opts?.timeoutMs);
       const extracted = extractJson(raw);
       if (extracted === null) {
         lastDetail = `sin JSON extraíble (raw=${truncate(raw)})`;
+        if (attempt < MAX_ATTEMPTS) {
+          console.warn(`[chatJson] intento ${attempt} (${currentModel}) falló: ${lastDetail}`);
+        }
         continue;
       }
       const parsed = schema.safeParse(extracted);
@@ -71,12 +79,16 @@ export async function chatJson<T>(
         lastDetail = `no cumple el esquema: ${parsed.error.issues
           .map((i) => i.path.join(".") + " " + i.message)
           .join("; ")} (raw=${truncate(raw)})`;
+        if (attempt < MAX_ATTEMPTS) {
+          console.warn(`[chatJson] intento ${attempt} (${currentModel}) falló: ${lastDetail}`);
+        }
         continue;
       }
       return { ok: true, data: parsed.data, raw };
     } catch (err) {
       lastDetail = err instanceof Error ? err.message : String(err);
       if (attempt < MAX_ATTEMPTS) {
+        console.warn(`[chatJson] intento ${attempt} (${currentModel}) falló por excepción: ${lastDetail}`);
         await sleep(RETRY_DELAY_MS * attempt);
       }
     }
@@ -99,15 +111,53 @@ async function callProvider(
   const env = getEnv();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  const base = env.PROVIDER_BASE_URL || env.OPENROUTER_BASE_URL || "https://openrouter.ai/api";
+  let baseUrl = `${base}/v1/chat/completions`;
+  let apiKey = env.PROVIDER_API_TOKEN || env.PROVIDER_API_KEY || env.OPENROUTER_API_TOKEN || env.OPENROUTER_API_KEY || "";
+  let targetModel = model;
+
+  const isDeepseekModel = model.toLowerCase().includes("deepseek");
+  const isGroqModel = model.toLowerCase().includes("groq");
+  const isGeminiModel = model.toLowerCase().includes("gemini") && !model.toLowerCase().startsWith("openrouter/");
+
+  if (isDeepseekModel || (base.includes("deepseek.com") && !isGroqModel && !isGeminiModel && !model.includes("/"))) {
+    baseUrl = base.includes("deepseek.com") ? `${base.replace(/\/+$/, "")}/chat/completions` : "https://api.deepseek.com/chat/completions";
+    if (env.DEEPSEEK_API_KEY) {
+      apiKey = env.DEEPSEEK_API_KEY;
+    }
+    targetModel = model.replace(/^deepseek\//i, "");
+  } else if (isGroqModel) {
+    if (env.GROQ_API_KEY) {
+      baseUrl = "https://api.groq.com/openai/v1/chat/completions";
+      apiKey = env.GROQ_API_KEY;
+      targetModel = model.replace(/^groq\//i, "");
+    } else {
+      const openRouterBase = env.OPENROUTER_BASE_URL || "https://openrouter.ai/api";
+      baseUrl = `${openRouterBase}/v1/chat/completions`;
+      if (env.OPENROUTER_API_TOKEN || env.OPENROUTER_API_KEY) {
+        apiKey = env.OPENROUTER_API_TOKEN || env.OPENROUTER_API_KEY || apiKey;
+      }
+      targetModel = model;
+    }
+  } else if (isGeminiModel && env.GEMINI_API_KEY) {
+    baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+    apiKey = env.GEMINI_API_KEY;
+    targetModel = model.replace(/^(google|gemini)\//i, "");
+  } else {
+    baseUrl = `${base}/v1/chat/completions`;
+    targetModel = model.replace(/^openrouter\//i, "");
+  }
+
   try {
-    const res = await fetch(`${env.OPENROUTER_BASE_URL}/v1/chat/completions`, {
+    const res = await fetch(baseUrl, {
       method: "POST",
       headers: {
         // El token jamás se loguea; solo viaja en este header.
-        Authorization: `Bearer ${env.OPENROUTER_API_TOKEN}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ model, messages }),
+      body: JSON.stringify({ model: targetModel, messages }),
       signal: controller.signal,
     });
     if (!res.ok) {

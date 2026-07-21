@@ -1,5 +1,5 @@
 {
-  "name": "vocero-crm",
+  "name": "venta-max-ia",
   "version": "1.0.0",
   "description": "CRM de WhatsApp open source y self-hosted con agente de IA y Laboratorio de auto-evaluación",
   "license": "MIT",
@@ -19,7 +19,13 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "seed:demo": "esbuild scripts/seed/demo.ts --bundle --platform=node --format=esm --outfile=.tmp-seed-demo.mjs --alias:@=./src --packages=external && node .tmp-seed-demo.mjs"
+    "seed:demo": "esbuild scripts/seed/demo.ts --bundle --platform=node --format=esm --outfile=.tmp-seed-demo.mjs --alias:@=./src --packages=external && node .tmp-seed-demo.mjs",
+    "test:ai": "tsx scripts/test-ai/run-all.ts",
+    "test:ai:gemini": "tsx scripts/test-ai/01-gemini-embeddings.ts",
+    "test:ai:nvidia": "tsx scripts/test-ai/02-nvidia-embeddings.ts",
+    "test:ai:deepseek": "tsx scripts/test-ai/03-deepseek-llm.ts",
+    "test:ai:fallbacks": "tsx scripts/test-ai/04-fallbacks.ts",
+    "test:ai:telegram": "tsx scripts/test-ai/05-telegram-bot.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -51,6 +57,7 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "tailwindcss-animate": "^1.0.7",
+    "tsx": "^4.23.1",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }

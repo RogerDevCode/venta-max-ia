@@ -1,0 +1,1 @@
+ALTER TABLE "kb_entry" ADD COLUMN "embedding" vector(1536);

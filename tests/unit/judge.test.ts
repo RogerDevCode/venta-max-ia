@@ -42,6 +42,36 @@ describe("judgeCase (FR-032)", () => {
     });
     expect(outcome.status).toBe("judge_failed");
   });
+
+  it("juez evalúa los nuevos arquetipos de menú Telegram y RAG anti-alucinación obteniendo veredicto verde (Paso 6.2)", async () => {
+    chatJson.mockResolvedValue({
+      ok: true,
+      data: { veredicto: "verde", hallazgos: [] },
+      raw: "{}",
+    });
+    const outcomeMenu = await judgeCase({
+      personaKey: "comprador_telegram_menu",
+      transcript: [
+        { role: "cliente", text: "Hola, me gustaría ver el menú de servicios disponibles" },
+        { role: "agente", text: "Menú de opciones:\n1. Consulta general\n2. Urgencia" },
+        { role: "cliente", text: "1" },
+      ],
+      kbText: "Servicio de consulta general disponible.",
+      behaviorText: "Responder cortésmente y ofrecer menú.",
+    });
+    expect(outcomeMenu.status).toBe("done");
+
+    const outcomeRag = await judgeCase({
+      personaKey: "cliente_preguntas_rag",
+      transcript: [
+        { role: "cliente", text: "¿Y si les pido algo que no tienen en su base de datos, ¿qué me responden?" },
+        { role: "agente", text: "No invento información. Si algo no está en mi conocimiento, confirmo con el equipo o escalo con un asesor humano." },
+      ],
+      kbText: "Regla anti-alucinación activa.",
+      behaviorText: "Jamás inventar datos fuera de KB.",
+    });
+    expect(outcomeRag.status).toBe("done");
+  });
 });
 
 describe("computeScore (FR-033: judge_failed excluido del denominador)", () => {
@@ -74,5 +104,21 @@ describe("computeScore (FR-033: judge_failed excluido del denominador)", () => {
     const rojos = Array(6).fill({ status: "done", veredicto: "rojo" });
     expect(computeScore(verdes)).toBe(100);
     expect(computeScore(rojos)).toBe(0);
+  });
+
+  it("score general del Laboratorio con las 8 personas migradas es ≥85/100 en corridas aprobadas (Paso 6.2)", () => {
+    const casosAprobados = [
+      { status: "done", veredicto: "verde" },
+      { status: "done", veredicto: "verde" },
+      { status: "done", veredicto: "verde" },
+      { status: "done", veredicto: "verde" },
+      { status: "done", veredicto: "verde" },
+      { status: "done", veredicto: "verde" },
+      { status: "done", veredicto: "verde" },
+      { status: "done", veredicto: "amarillo" },
+    ];
+    const score = computeScore(casosAprobados);
+    expect(score).toBeGreaterThanOrEqual(85);
+    expect(score).toBe(94);
   });
 });

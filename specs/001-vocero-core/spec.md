@@ -1,4 +1,4 @@
-# Feature Specification: Vocero CRM — Núcleo v1 (001-vocero-core)
+# Feature Specification: Venta Max IA — Núcleo v1 (001-vocero-core)
 
 **Feature Branch**: `001-vocero-core`
 
@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: Vocero CRM: CRM de WhatsApp con agente de IA, open source (MIT), self-hosted y
+**Input**: Venta Max IA: CRM de WhatsApp con agente de IA, open source (MIT), self-hosted y
 gratuito, diseñado para que agencias de IA lo desplieguen en el VPS de sus clientes (una
 instancia = un negocio). Incluye bandeja en tiempo real, contactos + pipeline kanban,
 agente de IA configurable con knowledge base, Laboratorio de auto-evaluación del agente,
@@ -109,7 +109,7 @@ cliente lo pide, cuando el propio agente lo decide, o cuando hay un error o la v
 está cerrada.
 
 **Why this priority**: El agente de IA es el diferenciador del producto y el motor de
-conversión; sin él, Vocero es solo una bandeja.
+conversión; sin él, Venta Max IA es solo una bandeja.
 
 **Independent Test**: Con el proveedor de IA de prueba interno, enviar un mensaje
 entrante y verificar que el agente responde con su configuración; enviar "quiero hablar
@@ -312,7 +312,7 @@ funciona.
 
 ### User Story 8 - Instalación en 15 minutos (Priority: P1)
 
-Como agencia, instalo Vocero en el VPS de mi cliente en ~15 minutos siguiendo el README:
+Como agencia, instalo Venta Max IA en el VPS de mi cliente en ~15 minutos siguiendo el README:
 por la Ruta A (panel Coolify guiado por un asistente de IA con el archivo INSTALL-IA.md)
 o por la Ruta B (docker compose con HTTPS automático). Al terminar, el sistema me indica
 explícitamente que la conexión de WhatsApp se hace después, desde Configuración →

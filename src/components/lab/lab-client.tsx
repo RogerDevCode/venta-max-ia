@@ -127,7 +127,7 @@ export function LabClient() {
           </p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
             El Laboratorio necesita el agente activo: agrega{" "}
-            <code className="rounded bg-secondary px-1">OPENROUTER_API_TOKEN</code> a la
+            <code className="rounded bg-secondary px-1">PROVIDER_API_TOKEN</code> a la
             instancia y vuelve aquí.
           </p>
         </div>

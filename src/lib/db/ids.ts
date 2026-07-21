@@ -11,11 +11,17 @@ const prefixes = {
   lead: "ld",
   stage: "stg",
   credentials: "cred",
+  telegramIntegration: "tgi",
+  telegramReceipt: "tgr",
   agentProfile: "agp",
   kbEntry: "kb",
   template: "tpl",
   testRun: "run",
   testCase: "case",
+  category: "cat",
+  product: "prd",
+  cart: "crt",
+  order: "ord",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

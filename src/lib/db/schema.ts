@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   index,
   integer,
@@ -7,6 +8,7 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  vector,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -186,6 +188,9 @@ export const conversation = pgTable(
     lastInboundAt: timestamp("last_inbound_at"),
     lastMessageAt: timestamp("last_message_at"),
     unreadCount: integer("unread_count").notNull().default(0),
+    stateMetadata: jsonb("state_metadata")
+      .$type<Record<string, unknown>>()
+      .default({}),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -259,6 +264,49 @@ export const metaCredentials = pgTable(
   ]
 );
 
+/** Ruta de webhook Telegram por organización; el token se conserva solo como hash. */
+export const telegramIntegration = pgTable(
+  "telegram_integration",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    webhookTokenHash: text("webhook_token_hash").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("telegram_integration_org_uq").on(t.organizationId),
+    uniqueIndex("telegram_integration_token_hash_uq").on(t.webhookTokenHash),
+  ]
+);
+
+/** Evidencia idempotente de cada update Telegram recibido antes de su ingesta. */
+export const telegramWebhookReceipt = pgTable(
+  "telegram_webhook_receipt",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    integrationId: text("integration_id")
+      .notNull()
+      .references(() => telegramIntegration.id, { onDelete: "cascade" }),
+    updateId: bigint("update_id", { mode: "number" }).notNull(),
+    payloadHash: text("payload_hash").notNull(),
+    status: text("status", { enum: ["received", "conflict"] })
+      .notNull()
+      .default("received"),
+    receivedAt: timestamp("received_at").notNull().defaultNow(),
+    processedAt: timestamp("processed_at"),
+  },
+  (t) => [
+    uniqueIndex("telegram_receipt_org_update_uq").on(t.organizationId, t.updateId),
+    index("telegram_receipt_org_received_idx").on(t.organizationId, t.receivedAt),
+  ]
+);
+
 export const agentProfile = pgTable(
   "agent_profile",
   {
@@ -289,6 +337,8 @@ export const kbEntry = pgTable(
     question: text("question"),
     answer: text("answer"),
     content: text("content"),
+    /** Vector RAG de 1536 dimensiones (Similitud Coseno <=>). */
+    embedding: vector("embedding", { dimensions: 1536 }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -374,4 +424,111 @@ export const agentTestCase = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("test_case_run_idx").on(t.runId)]
+);
+
+/* ============================================================
+ * E-Commerce (Multi-tenant org-first: catálogos, carritos y pedidos)
+ * ============================================================ */
+
+export const category = pgTable(
+  "category",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("category_org_name_idx").on(t.organizationId, t.name)]
+);
+
+export const product = pgTable(
+  "product",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    categoryId: text("category_id").references(() => category.id, {
+      onDelete: "set null",
+    }),
+    sku: text("sku").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    price: integer("price").notNull().default(0),
+    stock: integer("stock").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("product_org_sku_uq").on(t.organizationId, t.sku),
+    index("product_org_active_idx").on(t.organizationId, t.active),
+  ]
+);
+
+export const cart = pgTable(
+  "cart",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    items: jsonb("items")
+      .$type<{ sku: string; quantity: number; unitPrice: number; name: string }[]>()
+      .notNull()
+      .default([]),
+    status: text("status", { enum: ["active", "converted", "abandoned"] })
+      .notNull()
+      .default("active"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("cart_org_conv_status_idx").on(
+      t.organizationId,
+      t.conversationId,
+      t.status
+    ),
+  ]
+);
+
+export const order = pgTable(
+  "order",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id").references(() => conversation.id, {
+      onDelete: "set null",
+    }),
+    cartId: text("cart_id").references(() => cart.id, {
+      onDelete: "set null",
+    }),
+    orderNumber: text("order_number").notNull(),
+    items: jsonb("items")
+      .$type<{ sku: string; quantity: number; unitPrice: number; name: string }[]>()
+      .notNull()
+      .default([]),
+    totalAmount: integer("total_amount").notNull().default(0),
+    status: text("status", {
+      enum: ["pending", "confirmed", "processing", "completed", "cancelled"],
+    })
+      .notNull()
+      .default("pending"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("order_org_number_uq").on(t.organizationId, t.orderNumber),
+    index("order_org_status_idx").on(t.organizationId, t.status),
+  ]
 );

@@ -8,6 +8,27 @@
       "when": 1783657511753,
       "tag": "0000_absurd_the_santerians",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784591622484,
+      "tag": "0001_chubby_tiger_shark",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784599844338,
+      "tag": "0002_freezing_killraven",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784659499242,
+      "tag": "0003_fat_jack_flag",
+      "breakpoints": true
     }
   ]
 }

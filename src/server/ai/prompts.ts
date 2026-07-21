@@ -26,9 +26,18 @@ export function buildAgentSystemPrompt(input: {
   profile: AgentProfile;
   kb: KbEntry[];
   stages: { name: string }[];
+  ragContext?: string;
+  stateMetadata?: Record<string, unknown>;
 }): string {
   const { profile } = input;
   const stageNames = input.stages.map((s) => s.name).join(" | ");
+  const kbContent =
+    input.ragContext !== undefined ? input.ragContext : renderKb(input.kb);
+  const stateContent =
+    input.stateMetadata && Object.keys(input.stateMetadata).length > 0
+      ? `VARIABLES DE ESTADO ACUMULADAS DE ESTA CONVERSACIÓN:\n${JSON.stringify(input.stateMetadata, null, 2)}`
+      : null;
+
   return [
     `Eres "${profile.name}", el asistente de WhatsApp de este negocio. Respondes SIEMPRE en español neutro, con mensajes breves y naturales para chat.`,
     profile.tone ? `Tono: ${profile.tone}` : null,
@@ -37,7 +46,8 @@ export function buildAgentSystemPrompt(input: {
       ? `Reglas de escalado a humano:\n${profile.escalationRules}`
       : null,
     profile.greeting ? `Saludo sugerido para conversaciones nuevas: ${profile.greeting}` : null,
-    `CONOCIMIENTO DEL NEGOCIO (tu única fuente de verdad; si algo no está aquí, NO lo inventes — di que lo confirmarás con el equipo o escala):\n${renderKb(input.kb)}`,
+    stateContent,
+    `CONOCIMIENTO DEL NEGOCIO (tu única fuente de verdad; si algo no está aquí, NO lo inventes — di que lo confirmarás con el equipo o escala):\n${kbContent}`,
     `Etapas del pipeline disponibles: ${stageNames}`,
     [
       "En cada turno respondes ÚNICAMENTE un objeto JSON con UNA acción:",
@@ -46,10 +56,16 @@ export function buildAgentSystemPrompt(input: {
       '- {"action":"update_lead","note":"...","reply":"..."} — guardar una nota del lead (reply opcional).',
       '- {"action":"move_stage","stage":"<nombre exacto de etapa>","reply":"..."} — mover el lead (reply opcional).',
       '- {"action":"handoff","reason":"...","farewell":"..."} — escalar a un humano (farewell opcional para despedirte).',
+      '- {"action":"actualizar_variable","clave":"<nombre_variable>","valor":<valor>,"reply":"..."} — guardar o actualizar una variable de estado del cliente y opcionalmente responder.',
+      '- {"action":"enviar_menu_opciones","titulo":"...","botones":[{"texto":"...","payload":"..."}]} — enviar un menú de opciones interactivas (máximo 8 botones).',
+      '- {"action":"buscar_producto","query":"...","reply":"..."} — buscar productos en el catálogo por nombre, SKU o palabra clave.',
+      '- {"action":"agregar_al_carrito","sku":"<sku>","cantidad":<num>,"reply":"..."} — añadir un producto al carrito de compras de la conversación.',
+      '- {"action":"confirmar_pedido","reply":"..."} — formalizar y confirmar el pedido actual del cliente convirtiendo su carrito.',
       "Reglas duras:",
       "- Si el cliente pide hablar con una persona/humano/asesor → handoff.",
       "- Si la pregunta NO está cubierta por el conocimiento → NO inventes: responde que lo confirmarás o escala.",
       "- Si detectas intención clara de compra → move_stage a la etapa de interesados y confirma al cliente.",
+      "- Si el cliente desea comprar un producto → primero agrega al carrito con agregar_al_carrito y cuando confirme el pedido ejecuta confirmar_pedido.",
       "- JSON puro, sin markdown ni texto adicional.",
     ].join("\n"),
   ]

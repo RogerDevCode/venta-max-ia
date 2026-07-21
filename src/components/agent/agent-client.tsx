@@ -103,8 +103,8 @@ export function AgentClient() {
           <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
           <p className="font-medium">Configura tu proveedor de IA para activar el agente</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            Agrega <code className="rounded bg-secondary px-1">OPENROUTER_API_TOKEN</code> y{" "}
-            <code className="rounded bg-secondary px-1">OPENROUTER_MODEL</code> a las variables
+            Agrega <code className="rounded bg-secondary px-1">PROVIDER_API_TOKEN</code> y{" "}
+            <code className="rounded bg-secondary px-1">PROVIDER_MODEL</code> a las variables
             de entorno de la instancia y reiníciala. Mientras tanto puedes dejar listo el
             comportamiento y el conocimiento aquí abajo.
           </p>

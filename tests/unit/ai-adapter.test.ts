@@ -31,8 +31,15 @@ describe("chatJson (reintentos y errores tipados)", () => {
     vi.stubEnv("BETTER_AUTH_SECRET", "secret-de-test-suficiente");
     vi.stubEnv("ENCRYPTION_KEY", Buffer.alloc(32, 3).toString("base64"));
     vi.stubEnv("META_WEBHOOK_VERIFY_TOKEN", "verify-test");
-    vi.stubEnv("OPENROUTER_API_TOKEN", "token-test");
-    vi.stubEnv("OPENROUTER_MODEL", "modelo-test");
+    vi.stubEnv("PROVIDER_API_TOKEN", "token-test");
+    vi.stubEnv("PROVIDER_API_KEY", "");
+    vi.stubEnv("OPENROUTER_API_TOKEN", "");
+    vi.stubEnv("OPENROUTER_API_KEY", "");
+    vi.stubEnv("DEEPSEEK_API_KEY", "");
+    vi.stubEnv("GROQ_API_KEY", "");
+    vi.stubEnv("GEMINI_API_KEY", "");
+    vi.stubEnv("NVIDIA_API_KEY", "");
+    vi.stubEnv("PROVIDER_MODEL", "modelo-test");
   });
 
   afterEach(() => {
@@ -91,7 +98,14 @@ describe("chatJson (reintentos y errores tipados)", () => {
   });
 
   it("sin token → not_configured sin tocar la red", async () => {
+    vi.stubEnv("PROVIDER_API_TOKEN", "");
+    vi.stubEnv("PROVIDER_API_KEY", "");
     vi.stubEnv("OPENROUTER_API_TOKEN", "");
+    vi.stubEnv("OPENROUTER_API_KEY", "");
+    vi.stubEnv("DEEPSEEK_API_KEY", "");
+    vi.stubEnv("GROQ_API_KEY", "");
+    vi.stubEnv("GEMINI_API_KEY", "");
+    vi.stubEnv("NVIDIA_API_KEY", "");
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 

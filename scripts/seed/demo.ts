@@ -10,14 +10,12 @@ import * as schema from "@/lib/db/schema";
 import { seedDemo, isDomainEmpty } from "@/server/seed/demo";
 
 function loadEnvVar(name: string): string | undefined {
-  if (process.env[name]) return process.env[name];
   try {
     const env = readFileSync(".env", "utf8");
-    const line = env.split(/\r?\n/).find((l) => l.startsWith(`${name}=`));
-    return line?.slice(name.length + 1).trim();
-  } catch {
-    return undefined;
-  }
+    const line = env.split(/\r?\n/).find((l) => l.trim().startsWith(`${name}=`));
+    if (line) return line.trim().slice(name.length + 1).trim();
+  } catch {}
+  return process.env[name];
 }
 
 const url = loadEnvVar("DATABASE_URL");

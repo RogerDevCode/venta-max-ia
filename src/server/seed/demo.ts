@@ -253,6 +253,7 @@ export async function seedDemo(
   await db
     .update(schema.agentProfile)
     .set({
+      enabled: true,
       name: "Martillito",
       tone: "Cercano y práctico, de ferretería de confianza. Tutea al cliente.",
       instructions:

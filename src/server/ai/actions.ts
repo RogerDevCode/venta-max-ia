@@ -23,6 +23,40 @@ export const AgentAction = z.discriminatedUnion("action", [
     reason: z.string().optional(),
     farewell: z.string().optional(),
   }),
+  z.object({
+    action: z.literal("actualizar_variable"),
+    clave: z.string().min(1),
+    valor: z.any(),
+    reply: z.string().optional(),
+  }),
+  z.object({
+    action: z.literal("enviar_menu_opciones"),
+    titulo: z.string().min(1),
+    botones: z
+      .array(
+        z.object({
+          texto: z.string().min(1),
+          payload: z.string().min(1),
+        })
+      )
+      .min(1)
+      .max(8),
+  }),
+  z.object({
+    action: z.literal("buscar_producto"),
+    query: z.string().min(1),
+    reply: z.string().optional(),
+  }),
+  z.object({
+    action: z.literal("agregar_al_carrito"),
+    sku: z.string().min(1),
+    cantidad: z.number().int().positive().optional(),
+    reply: z.string().optional(),
+  }),
+  z.object({
+    action: z.literal("confirmar_pedido"),
+    reply: z.string().optional(),
+  }),
 ]);
 
 export type AgentActionType = z.infer<typeof AgentAction>;

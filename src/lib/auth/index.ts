@@ -18,16 +18,16 @@ import { isPublicSignupAllowed } from "@/server/auth/registration";
  * desde fuera: solo envuelve llamadas server-side.
  */
 const globalForSignup = globalThis as unknown as {
-  __voceroInternalSignup?: AsyncLocalStorage<boolean>;
+  __ventaMaxIaInternalSignup?: AsyncLocalStorage<boolean>;
 };
 
 // En globalThis: los módulos pueden evaluarse más de una vez (una por ruta en
 // dev) y todas las copias deben compartir el mismo contexto.
 function internalSignupContext(): AsyncLocalStorage<boolean> {
-  if (!globalForSignup.__voceroInternalSignup) {
-    globalForSignup.__voceroInternalSignup = new AsyncLocalStorage<boolean>();
+  if (!globalForSignup.__ventaMaxIaInternalSignup) {
+    globalForSignup.__ventaMaxIaInternalSignup = new AsyncLocalStorage<boolean>();
   }
-  return globalForSignup.__voceroInternalSignup;
+  return globalForSignup.__ventaMaxIaInternalSignup;
 }
 
 export function runInternalSignup<T>(fn: () => Promise<T>): Promise<T> {
@@ -115,9 +115,9 @@ function createAuth() {
 
 type Auth = ReturnType<typeof createAuth>;
 
-const globalForAuth = globalThis as unknown as { __voceroAuth?: Auth };
+const globalForAuth = globalThis as unknown as { __ventaMaxIaAuth?: Auth };
 
 export function getAuth(): Auth {
-  if (!globalForAuth.__voceroAuth) globalForAuth.__voceroAuth = createAuth();
-  return globalForAuth.__voceroAuth;
+  if (!globalForAuth.__ventaMaxIaAuth) globalForAuth.__ventaMaxIaAuth = createAuth();
+  return globalForAuth.__ventaMaxIaAuth;
 }

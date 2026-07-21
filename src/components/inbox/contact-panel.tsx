@@ -220,7 +220,7 @@ export function ContactPanel({
                 <p className="text-[11px] leading-relaxed text-[#8a6d3b]">
                   {aiConfigured
                     ? "La IA todavía no responde por su cuenta. Configura lo básico del agente y enciéndelo."
-                    : "Falta la clave de IA de la instancia (OPENROUTER_API_TOKEN) para que el agente pueda responder."}
+                    : "Falta la clave de IA de la instancia (PROVIDER_API_TOKEN) para que el agente pueda responder."}
                   {aiConfigured && (
                     <Link
                       href="/agent"

@@ -1,6 +1,6 @@
 # HTTPS automático con el dominio de la variable DOMAIN.
-# Para pruebas locales usa DOMAIN=localhost (certificado interno).
-{$DOMAIN} {
+# Para pruebas locales y túnel Cloudflare (:7080/:80), redirige directo al CRM en app:3000.
+:7080, :80, {$DOMAIN:localhost} {
 	reverse_proxy app:3000 {
 		# SSE: sin buffering ni timeouts cortos en el proxy
 		flush_interval -1

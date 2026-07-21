@@ -1,39 +1,58 @@
 # ============================================================
-# Vocero CRM — Ruta B: app + Postgres + Caddy (HTTPS automático)
+# Venta Max IA — Ruta B: app + Postgres + Caddy (HTTPS automático)
 # Uso:  cp .env.example .env  →  rellenar  →  docker compose up -d --build
 # ============================================================
 services:
   app:
     build: .
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      APP_BASE_URL: ${APP_BASE_URL}
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/vocero
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
-      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/vocero
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-default_secret_vocero_crm_change_me}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-vocero_verify_token}
       META_APP_SECRET: ${META_APP_SECRET:-}
       META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v25.0}
-      OPENROUTER_API_TOKEN: ${OPENROUTER_API_TOKEN:-}
-      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api}
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
-      OPENROUTER_JUDGE_MODEL: ${OPENROUTER_JUDGE_MODEL:-}
-      ALLOW_SIGNUP: ${ALLOW_SIGNUP:-}
-      AGENT_COALESCE_MS: ${AGENT_COALESCE_MS:-6000}
+      PROVIDER_API_TOKEN: ${PROVIDER_API_TOKEN:-${OPENROUTER_API_TOKEN:-}}
+      PROVIDER_API_KEY: ${PROVIDER_API_KEY:-${OPENROUTER_API_KEY:-}}
+      PROVIDER_BASE_URL: ${PROVIDER_BASE_URL:-${OPENROUTER_BASE_URL:-https://api.deepseek.com}}
+      PROVIDER_MODEL: ${PROVIDER_MODEL:-${OPENROUTER_MODEL:-deepseek-chat}}
+      PROVIDER_FALLBACK_API_KEY: ${PROVIDER_FALLBACK_API_KEY:-${GEMINI_API_KEY:-}}
+      PROVIDER_FALLBACK_BASE_URL: ${PROVIDER_FALLBACK_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
+      PROVIDER_FALLBACK_MODEL: ${PROVIDER_FALLBACK_MODEL:-gemini-2.0-flash}
+      PROVIDER_EMBEDDING_API_KEY: ${PROVIDER_EMBEDDING_API_KEY:-${GEMINI_API_KEY:-}}
+      PROVIDER_EMBEDDING_BASE_URL: ${PROVIDER_EMBEDDING_BASE_URL:-}
+      PROVIDER_EMBEDDING_MODEL: ${PROVIDER_EMBEDDING_MODEL:-text-embedding-004}
+      PROVIDER_JUDGE_MODEL: ${PROVIDER_JUDGE_MODEL:-${OPENROUTER_JUDGE_MODEL:-}}
+      PROVIDER_JUDGE_FALLBACK_MODEL: ${PROVIDER_JUDGE_FALLBACK_MODEL:-${OPENROUTER_JUDGE_FALLBACK_MODEL:-}}
+      ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
+      AGENT_COALESCE_MS: ${AGENT_COALESCE_MS:-1500}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ID: ${TELEGRAM_ID:-}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+      CLOUDFLARE_TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+      WA_MOCK_ENABLED: ${WA_MOCK_ENABLED:-false}
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - vocero_net
     # el HEALTHCHECK vive en el Dockerfile (/api/health)
 
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg18
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: vocero
     volumes:
-      - vocero_pg:/var/lib/postgresql/data
+      - vocero_pg:/var/lib/postgresql
+    networks:
+      - vocero_net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d vocero"]
       interval: 10s
@@ -46,21 +65,48 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      - "7080:7080"
     environment:
-      DOMAIN: ${DOMAIN}
+      DOMAIN: ${DOMAIN:-localhost}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - vocero_caddy_data:/data
       - vocero_caddy_config:/config
     depends_on:
       - app
+    networks:
+      vocero_net:
+        aliases:
+          - bot
+          - nginx
+          - localhost
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:2019/config/"]
       interval: 15s
       timeout: 5s
       retries: 5
 
+  tunnel:
+    image: cloudflare/cloudflared:2026.1.2
+    container_name: cloudflare_tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - caddy
+    networks:
+      - vocero_net
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+
 volumes:
   vocero_pg:
   vocero_caddy_data:
   vocero_caddy_config:
+
+networks:
+  vocero_net:
+    driver: bridge

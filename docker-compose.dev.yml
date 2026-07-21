@@ -4,7 +4,7 @@ name: vocero-dev
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg18
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -13,12 +13,42 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - vocero_dev_pg:/var/lib/postgresql/data
+      - vocero_dev_pg:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d vocero"]
       interval: 5s
       timeout: 3s
       retries: 10
+    networks:
+      - vocero_dev_net
+
+  dev_proxy:
+    image: caddy:2-alpine
+    container_name: vocero_dev_bot_proxy
+    restart: unless-stopped
+    command: caddy reverse-proxy --from :7080 --to host.docker.internal:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      vocero_dev_net:
+        aliases:
+          - bot
+          - nginx
+          - localhost
+
+  tunnel:
+    image: cloudflare/cloudflared:2026.1.2
+    container_name: vocero_dev_tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - dev_proxy
+    networks:
+      - vocero_dev_net
 
 volumes:
   vocero_dev_pg:
+
+networks:
+  vocero_dev_net:
+    driver: bridge

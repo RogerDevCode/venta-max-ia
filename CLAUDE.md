@@ -1,9 +1,9 @@
-# Vocero CRM — Guía para Claude
+# Venta Max IA — Guía para Claude
 
-Vocero es un CRM de WhatsApp open source (MIT), self-hosted, con agente de IA y
+Venta Max IA es un CRM de WhatsApp open source (MIT), self-hosted, con agente de IA y
 Laboratorio de auto-evaluación. Una instancia = un negocio. Este archivo guía a
 Claude Code (u otro asistente) para operar y **modificar** este repositorio —
-el caso típico: una agencia adaptando Vocero para un cliente.
+el caso típico: una agencia adaptando Venta Max IA para un cliente.
 
 ## Stack
 
@@ -62,9 +62,9 @@ Ver `.env.example` (cada una con guía inline). Las claves: `APP_BASE_URL`,
 (opcional, firma), y para IA:
 
 ```bash
-OPENROUTER_API_TOKEN=sk-or-...
-OPENROUTER_MODEL=anthropic/claude-sonnet-4.5
-OPENROUTER_JUDGE_MODEL=anthropic/claude-haiku-4.5   # opcional: juez más barato
+PROVIDER_API_TOKEN=sk-or-...
+PROVIDER_MODEL=deepseek/deepseek-v4-flash
+PROVIDER_JUDGE_MODEL=groq/llama-3.3-70b-versatile   # opcional: juez
 ```
 
 Para el self-test local existe además el modo de pruebas interno (mocks) —
@@ -82,7 +82,7 @@ deploy, las vars van también en la plataforma de hosting (runtime, no build).
 "Typecheck + lint + build (+ tests)" es el piso, NO el techo. Una feature no
 está "Hecha" hasta correr el **self-test de COMPORTAMIENTO de punta a punta**
 (Playwright + mocks: `WA_MOCK_ENABLED=true`, `META_GRAPH_BASE_URL` → wa-mock,
-`OPENROUTER_BASE_URL` → ai-mock) y dejarlo verde: flujo real como usuario,
+`PROVIDER_BASE_URL` → ai-mock) y dejarlo verde: flujo real como usuario,
 resultado observable, y el camino infeliz degradando sin colgarse. Prohibido
 delegar la prueba al usuario. Si algo depende de un LLM/proveedor externo,
 todo turno tolera formato inesperado con extracción robusta + reintentos — un

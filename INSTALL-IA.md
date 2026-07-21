@@ -1,4 +1,4 @@
-# INSTALL-IA.md — Instalación de Vocero CRM guiada por IA
+# INSTALL-IA.md — Instalación de Venta Max IA guiada por IA
 
 > **Para el asistente de IA** (Claude Code u otro agente con acceso a
 > herramientas): este archivo ES tu guion de instalación. Síguelo de arriba a
@@ -45,8 +45,8 @@
 | `ENCRYPTION_KEY` | generado (base64, 44 caracteres) |
 | `META_WEBHOOK_VERIFY_TOKEN` | generado |
 | `META_GRAPH_API_VERSION` | `v25.0` |
-| `OPENROUTER_API_TOKEN` | del usuario (si lo dio) |
-| `OPENROUTER_MODEL` | si hay token: sugiere `anthropic/claude-sonnet-4.5` u otro a elección |
+| `PROVIDER_API_TOKEN` | del usuario (si lo dio) |
+| `PROVIDER_MODEL` | si hay token: sugiere `deepseek/deepseek-v4-flash` u otro a elección |
 
 `DOMAIN` solo aplica en la Ruta B (para Caddy).
 
@@ -71,7 +71,7 @@
 ## Ruta B — docker compose (VPS con Docker)
 
 ```bash
-git clone https://github.com/kevinrivm/vocero-crm.git vocero && cd vocero
+git clone https://github.com/kevinrivm/vocero-crm.git venta-max-ia && cd venta-max-ia
 cp .env.example .env
 # rellena .env con el dominio del usuario y los secretos generados
 docker compose up -d --build
@@ -83,7 +83,7 @@ docker compose up -d --build
 
 ## Cierre (obligatorio decirlo al usuario)
 
-> ✅ Vocero quedó instalado en `https://<dominio>`.
+> ✅ Venta Max IA quedó instalado en `https://<dominio>`.
 >
 > 1. Entra y **regístrate**: el primer registro crea tu organización (después
 >    el registro público se cierra solo).

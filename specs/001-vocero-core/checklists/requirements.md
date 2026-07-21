@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Vocero CRM — Núcleo v1
+# Specification Quality Checklist: Venta Max IA — Núcleo v1
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-07-09

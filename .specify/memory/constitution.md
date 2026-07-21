@@ -4,7 +4,7 @@ SYNC IMPACT REPORT
 Versión: 1.1.0 (plantilla starter) → 1.2.0
 
 Cambios:
-  - Título y descripción del producto: Vocero CRM (CRM de WhatsApp con agente de
+  - Título y descripción del producto: Venta Max IA (CRM de WhatsApp con agente de
     IA, open source MIT, self-hosted, gratuito; una instancia = un negocio).
   - Principio II "Soberanía / Self-Hosted" → ENDURECIDO: se elimina la excepción
     de almacenamiento de objetos S3-compatible; lista cerrada de dependencias
@@ -30,9 +30,9 @@ Plantillas dependientes:
 TODOs diferidos: ninguno.
 -->
 
-# Vocero CRM Constitution
+# Venta Max IA Constitution
 
-Vocero CRM es un CRM de WhatsApp con agente de IA, open source (MIT), self-hosted y
+Venta Max IA es un CRM de WhatsApp con agente de IA, open source (MIT), self-hosted y
 gratuito, diseñado para que las agencias de IA lo desplieguen en el VPS de sus
 clientes: una instancia = un negocio. Esta constitución define las reglas no
 negociables del producto. Aplica a todas las fases del flujo de trabajo (specify,
@@ -59,7 +59,7 @@ fallo catastrófico e irreversible; prevenirlo siempre cuesta menos que remediar
 
 ### II. Soberanía / Self-Hosted (ENDURECIDO)
 
-Vocero CRM opera completo sobre la infraestructura del operador. La lista de
+Venta Max IA opera completo sobre la infraestructura del operador. La lista de
 dependencias externas en runtime es CERRADA:
 
 - Dependencias externas permitidas en runtime, ÚNICAMENTE:
@@ -85,7 +85,7 @@ fuga de soberanía que rompe la promesa "gratis y tuyo".
 ### III. Multi-Tenancy Real
 
 El sistema sirve a organizaciones independientes desde una sola instancia lógica.
-En Vocero cada instancia sirve a UN negocio, pero el modelo de datos es
+En Venta Max IA cada instancia sirve a UN negocio, pero el modelo de datos es
 multi-tenant real (organización del plugin de auth) para mantener el aislamiento
 exigible y no cerrar la puerta a evoluciones.
 

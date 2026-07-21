@@ -94,6 +94,32 @@ export const PERSONAS: Persona[] = [
       "va, orita paso x la tienda, sale",
     ],
   },
+  {
+    key: "comprador_telegram_menu",
+    label: "Comprador menú Telegram",
+    description: "Prueba la interactividad y selección desde menús de opciones en Telegram.",
+    phone: "5210000000007",
+    contactName: "[Prueba] Comprador Telegram menú",
+    script: [
+      "Hola, me gustaría ver el menú de servicios disponibles",
+      "1",
+      "Me interesa ese servicio, quiero agregarlo al carrito",
+      "Por favor confirma mi pedido",
+    ],
+  },
+  {
+    key: "cliente_preguntas_rag",
+    label: "Cliente RAG anti-alucinación",
+    description: "Evalúa si el RAG recupera información técnica precisa de la base de conocimiento sin alucinar.",
+    phone: "5210000000008",
+    contactName: "[Prueba] Cliente preguntas RAG",
+    script: [
+      "Buenas, necesito información técnica detallada",
+      "¿Qué especificaciones y horarios exactos manejan según su documentación?",
+      "Y si les pido algo que no tienen en su base de datos, ¿qué me responden?",
+      "Entendido, muchas gracias por la precisión",
+    ],
+  },
 ];
 
 export const PERSONA_LABELS: Record<string, string> = Object.fromEntries(

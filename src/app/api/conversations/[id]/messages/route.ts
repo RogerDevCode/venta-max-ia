@@ -33,6 +33,8 @@ const SEND_ERROR_STATUS: Record<SendError["code"], number> = {
   window_closed: 409,
   meta_error: 422,
   meta_unavailable: 503,
+  telegram_error: 422,
+  telegram_unavailable: 503,
 };
 
 export const POST = withAuth(async (session, req: Request, ctx: Params) => {
