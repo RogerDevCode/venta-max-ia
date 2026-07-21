@@ -288,17 +288,21 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         organizationId,
         query: action.query,
       });
-      const resText =
-        action.reply ||
-        (productos.length > 0
-          ? `Productos encontrados:\n` +
+      const productList =
+        productos.length > 0
+          ? `📦 Productos encontrados:\n` +
             productos
               .map(
                 (p) =>
-                  `- ${p.name} (${p.sku}): $${(p.price / 100).toFixed(2)} (Stock: ${p.stock})`
+                  `• ${p.name} (${p.sku}): $${(p.price / 100).toFixed(2)} (Stock: ${p.stock})`
               )
               .join("\n")
-          : `No encontré productos con "${action.query}".`);
+          : `No encontré productos con "${action.query}".`;
+
+      const resText = action.reply
+        ? `${action.reply}\n\n${productList}`
+        : productList;
+
       await deliverReply(conversation, resText);
       return;
     }
