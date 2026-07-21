@@ -91,8 +91,6 @@ async function executeTurn(conversationId: string): Promise<void> {
  * Recibe el conversationId, extrae historial, evalúa contexto RAG + FSB y despacha acciones.
  */
 export async function runAgentTurn(conversationId: string): Promise<void> {
-  if (!isAiConfigured()) return;
-
   const db = getDb();
 
   const convRows = await db
@@ -144,6 +142,8 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       if (cmdResult.handled) return;
     }
   }
+
+  if (!isAiConfigured()) return;
 
   if (!conversation.isTest && !isWindowOpen(conversation.lastInboundAt)) {
     await applyHandoff(conversationId, organizationId, "ventana");

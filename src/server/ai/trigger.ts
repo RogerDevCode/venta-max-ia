@@ -9,6 +9,5 @@ import { isAiConfigured } from "@/lib/env";
 export async function maybeRunAgentTurn(
   conversationId: string
 ): Promise<void> {
-  if (!isAiConfigured()) return;
   scheduleAgentTurn(conversationId);
 }
