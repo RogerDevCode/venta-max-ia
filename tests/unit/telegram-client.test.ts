@@ -18,7 +18,7 @@ beforeAll(() => {
   process.env.BETTER_AUTH_SECRET = "secret-suficiente-para-tests";
   process.env.ENCRYPTION_KEY = Buffer.alloc(32, 9).toString("base64");
   process.env.META_WEBHOOK_VERIFY_TOKEN = "verify-test";
-  process.env.TELEGRAM_BOT_TOKEN = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11";
+  process.env.TELEGRAM_ADMIN_BOT_TOKEN = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11";
   process.env.TELEGRAM_API_BASE_URL = "https://api.telegram.org";
 });
 

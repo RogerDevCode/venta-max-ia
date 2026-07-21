@@ -55,10 +55,10 @@ export async function telegramRequest<T>(
   }
 ): Promise<T> {
   const env = getEnv();
-  const token = opts.token ?? env.TELEGRAM_BOT_TOKEN;
+  const token = opts.token ?? env.TELEGRAM_ADMIN_BOT_TOKEN;
   if (!token) {
     throw new TelegramApiError(
-      "No hay TELEGRAM_BOT_TOKEN configurado en el entorno o parámetros",
+      "No hay TELEGRAM_ADMIN_BOT_TOKEN configurado en el entorno o parámetros",
       { status: 401 }
     );
   }

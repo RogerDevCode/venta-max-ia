@@ -18,6 +18,10 @@ vi.mock("@/server/events/bus", () => ({
   publish: (orgId: string, event: unknown) => mockPublish(orgId, event),
 }));
 
+vi.mock("@/server/telegram/credentials", () => ({
+  getTelegramCredentialsByOrg: vi.fn().mockResolvedValue({ token: "tenant-token", botId: 1, botUsername: "tenant_bot", status: "connected" }),
+}));
+
 const selectRows: unknown[][] = [];
 const insertedMessages: Record<string, unknown>[] = [];
 
@@ -102,6 +106,7 @@ describe("Envío de Menús y Teclados de Telegram (Paso 2.1)", () => {
       text: "Elige una opción de nuestro menú:",
       parseMode: undefined,
       replyMarkup: menu,
+      token: "tenant-token",
     });
 
     // Validar guardado en BD

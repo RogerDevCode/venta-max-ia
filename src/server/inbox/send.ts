@@ -11,6 +11,7 @@ import {
 } from "@/server/whatsapp/credentials";
 import { isWindowOpen } from "@/server/inbox/window";
 import { serializeMessage } from "@/server/inbox/ingest";
+import { getTelegramCredentialsByOrg } from "@/server/telegram/credentials";
 
 /** Error tipado del envío; `code` mapea a HTTP en la capa de API. */
 export class SendError extends Error {
@@ -71,6 +72,11 @@ export async function sendText(input: {
       "sandbox_violation",
       "Conversación de prueba del Laboratorio: el envío real está prohibido"
     );
+  }
+
+  const telegramCredentials = await getTelegramCredentialsByOrg(input.organizationId);
+  if (!telegramCredentials || telegramCredentials.status !== "connected") {
+    throw new SendError("not_connected", "Telegram no está conectado para esta organización");
   }
 
   // Enrutamiento automático al canal Telegram si el último mensaje entrante fue de Telegram o si el contacto es Telegram ID
@@ -218,6 +224,11 @@ export async function sendTelegramText(input: {
     );
   }
 
+  const telegramCredentials = await getTelegramCredentialsByOrg(input.organizationId);
+  if (!telegramCredentials || telegramCredentials.status !== "connected") {
+    throw new SendError("not_connected", "Telegram no está conectado para esta organización");
+  }
+
   let res: { message_id: number };
   try {
     res = await sendMessage({
@@ -225,6 +236,7 @@ export async function sendTelegramText(input: {
       text: input.text,
       parseMode: input.parseMode,
       replyMarkup: input.replyMarkup,
+      token: telegramCredentials.token,
     });
   } catch (err) {
     if (err instanceof TelegramApiError) {
@@ -306,4 +318,3 @@ export async function sendOutbound(input: {
     aiGenerated: input.aiGenerated,
   });
 }
-

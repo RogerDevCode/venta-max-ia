@@ -273,6 +273,12 @@ export const telegramIntegration = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     webhookTokenHash: text("webhook_token_hash").notNull(),
+    tokenCipher: text("token_cipher"),
+    tokenIv: text("token_iv"),
+    tokenTag: text("token_tag"),
+    botId: bigint("bot_id", { mode: "number" }),
+    botUsername: text("bot_username"),
+    status: text("status", { enum: ["connected", "reconnect_required"] }).notNull().default("reconnect_required"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
