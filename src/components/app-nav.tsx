@@ -57,7 +57,7 @@ export function AppNav({
   });
 
   return (
-    <aside className="flex w-56 shrink-0 flex-col border-r bg-subtle px-3 pb-3.5 pt-4">
+    <aside className="flex w-56 shrink-0 flex-col border-r border-border/80 bg-subtle/85 backdrop-blur-md px-3 pb-3.5 pt-4 transition-colors duration-500">
       {/* Brand white-label */}
       <div className="mb-4 flex items-center gap-2.5 px-2">
         <span

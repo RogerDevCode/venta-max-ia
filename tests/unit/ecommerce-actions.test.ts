@@ -204,6 +204,7 @@ describe("Simulación E2E de Compra en E-Commerce con IA (Paso 5.2)", () => {
         stock: 10,
         active: true,
         metadata: {},
+        deletedAt: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       },

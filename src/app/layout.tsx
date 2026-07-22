@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { accentCssVariables, DEFAULT_BRANDING } from "@/lib/branding";
 import { getBranding } from "@/server/branding";
+import { AuthThemeProvider } from "@/app/(auth)/auth-theme-context";
 import "./globals.css";
 
 // next/font descarga la fuente en BUILD y la sirve self-hosted (sin CDN).
@@ -33,7 +34,9 @@ export default async function RootLayout({
           dangerouslySetInnerHTML={{ __html: accentCssVariables(branding.accent) }}
         />
       </head>
-      <body className="font-sans">{children}</body>
+      <body className="font-sans">
+        <AuthThemeProvider>{children}</AuthThemeProvider>
+      </body>
     </html>
   );
 }

@@ -9,47 +9,83 @@
 */
 @layer base {
   :root {
-    /* Grafito medio: superficies diferenciadas, sin blanco incandescente. */
-    --bg: #d7dfe6;
-    --bg-subtle: #cbd5df;
-    --bg-panel: #e3e9ee;
-    --surface: #f3f6f8;
-    --bg-hover: #d0d9e1;
-    --text: #18212b;
-    --text-2: #405061;
-    --text-3: #5d6d7e;
-    --text-4: #748396;
-    --border: #b9c5d0;
-    --border-strong: #96a6b6;
+    /* Modo Claro 20% más oscuro (plomo-azul cómodo #bac9dc con alto contraste de texto #0f172a) */
+    --bg: #bac9dc;
+    --bg-subtle: #a6b8ce;
+    --bg-panel: #cad6e5;
+    --surface: #dfe7f1;
+    --bg-hover: #b4c5d8;
+    --text: #0f172a;
+    --text-2: #1e293b;
+    --text-3: #334155;
+    --text-4: #475569;
+    --border: #94a8c0;
+    --border-strong: #7890ad;
 
     /* Chat */
-    --chat-bg: #dfe6ec;
-    --bubble-out: #edf2f6;
-    --bubble-out-text: #263747;
+    --chat-bg: #cad6e5;
+    --bubble-out: #dfe7f1;
+    --bubble-out-text: #0f172a;
 
-    /* Acento (default: azul acero apagado; white-label lo sobreescribe) */
-    --accent: #3f5972;
-    --accent-hover: #334a60;
-    --accent-soft: #c7d4e0;
-    --accent-tint: #e6edf3;
-    --accent-text: #2b4056;
+    /* Acento */
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --accent-soft: #bfdbfe;
+    --accent-tint: #dbeafe;
+    --accent-text: #1e40af;
     --bg-active: var(--accent-tint);
 
     /* Estado */
-    --success: #5f8f74;
-    --warning: #b08b5e;
-    --danger: #a2504c;
+    --success: #16a34a;
+    --warning: #d97706;
+    --danger: #dc2626;
 
     /* Radios y sombras */
     --radius-sm: 7px;
     --radius: 10px;
     --radius-lg: 14px;
-    --shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.05);
-    --shadow-md: 0 6px 20px -6px rgba(20, 20, 35, 0.12);
-    --shadow-pop: 0 12px 32px -8px rgba(20, 20, 35, 0.22);
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
+    --shadow-md: 0 6px 20px -6px rgba(15, 23, 42, 0.15);
+    --shadow-pop: 0 12px 32px -8px rgba(15, 23, 42, 0.25);
 
-    /* Densidad de filas de conversación */
     --row-py: 11px;
+  }
+
+  .dark {
+    /* Modo Oscuro profundo (#0b0f19 al estilo exacto de registro con texto cristalino #f8fafc) */
+    --bg: #0b0f19;
+    --bg-subtle: #0f1624;
+    --bg-panel: #111827;
+    --surface: #131d31;
+    --bg-hover: #1e293b;
+    --text: #f8fafc;
+    --text-2: #e2e8f0;
+    --text-3: #cbd5e1;
+    --text-4: #94a3b8;
+    --border: #1e293b;
+    --border-strong: #334155;
+
+    /* Chat */
+    --chat-bg: #0f1624;
+    --bubble-out: #1e293b;
+    --bubble-out-text: #f8fafc;
+
+    /* Acento */
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-soft: #1e3a8a;
+    --accent-tint: #172554;
+    --accent-text: #93c5fd;
+    --bg-active: var(--accent-tint);
+
+    /* Estado */
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 6px 20px -6px rgba(0, 0, 0, 0.5);
+    --shadow-pop: 0 12px 32px -8px rgba(0, 0, 0, 0.6);
   }
 }
 
@@ -58,7 +94,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background text-foreground antialiased transition-colors duration-500;
     letter-spacing: -0.01em;
   }
   input,

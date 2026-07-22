@@ -5,6 +5,7 @@ import { publish } from "@/server/events/bus";
 import { sendText } from "@/server/inbox/send";
 import { applyHandoff } from "@/server/ai/pipeline";
 import { buscarProductos, listarCategorias, listCatalogProducts } from "@/server/ecommerce/service";
+import { preloadCatalogCache } from "@/server/ecommerce/cache";
 
 export type SlashCommandType =
   | "start"
@@ -79,10 +80,15 @@ export async function processSlashCommand(input: {
   command: SlashCommandType;
   conversation: Conversation;
   lastInboundWaId?: string | null;
+  profile?: typeof schema.agentProfile.$inferSelect | null;
 }): Promise<{ handled: boolean }> {
   const { command, conversation, lastInboundWaId } = input;
   const { organizationId, id: conversationId } = conversation;
   const db = getDb();
+  const channel = lastInboundWaId?.startsWith("tg_") ? "telegram" : "wa";
+
+  // Precarga asíncrona no bloqueante del catálogo y stock en paralelo mientras se muestra el menú/comando
+  void preloadCatalogCache(organizationId).catch(() => {});
 
   const currentState = (conversation.stateMetadata as Record<string, unknown>) ?? {};
 
@@ -111,14 +117,14 @@ export async function processSlashCommand(input: {
     await updateState({ current_state: "menu:catalog", active_step: "viewing_catalog", catalogCategoryIds: categorias.map((c) => c.id), catalogCategoryId: null });
     const text = `📁 *Categorías de Productos*:\n${categorias.map((c, index) => `${index + 1}. *${c.name}*${c.description ? `: ${c.description}` : ""}`).join("\n")}\n\nElige una categoría con su botón o número.`;
     const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
-    await deliverCommandReply(conversation, text, isTelegram ? { replyMarkup: { inline_keyboard: categorias.map((c, index) => [{ text: `${index + 1}. ${c.name}`, callback_data: `catalog:category:${c.id}` }]) } } : undefined);
+    await deliverCommandReply(conversation, text, { replyMarkup: isTelegram ? { inline_keyboard: categorias.map((c, index) => [{ text: `${index + 1}. ${c.name}`, callback_data: `catalog:category:${c.id}` }]) } : undefined, channel });
   }
 
   if (command === "catalog:return") { await showCategories(); return { handled: true }; }
   if (command === "catalog:home") {
     await updateState({ current_state: "menu:main", active_step: "main_menu", catalogCategoryIds: null, catalogCategoryId: null });
     const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
-    await deliverCommandReply(conversation, "📌 *Menú Principal — VentaMaxIA*\nSelecciona una opción:", isTelegram ? { replyMarkup: buildMainMenuMarkup() } : undefined);
+    await deliverCommandReply(conversation, "📌 *Menú Principal — VentaMaxIA*\nSelecciona una opción:", { replyMarkup: isTelegram ? buildMainMenuMarkup() : undefined, channel });
     return { handled: true };
   }
   let categoryId: string | null = null;
@@ -136,9 +142,9 @@ export async function processSlashCommand(input: {
     try {
       const products = await listCatalogProducts(organizationId, categoryId);
       await updateState({ current_state: "menu:catalog", active_step: "viewing_category", catalogCategoryId: categoryId });
-      const text = products.length ? `🛍️ *Productos*:\n${products.map((p) => `• ${p.name} (${p.sku}): $${(p.price / 100).toFixed(2)} (Stock: ${p.stock})`).join("\n")}\n\nR. Retornar · I. Inicio` : "Esta categoría no tiene productos activos.\n\nR. Retornar · I. Inicio";
+      const text = products.length ? `🛍️ *Productos*:\n${products.map((p) => `• ${p.name} (${p.sku}): $${p.price.toLocaleString("es-CL")} CLP (Stock: ${p.stock})`).join("\n")}\n\nR. Retornar · I. Inicio` : "Esta categoría no tiene productos activos.\n\nR. Retornar · I. Inicio";
       const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
-      await deliverCommandReply(conversation, text, isTelegram ? { replyMarkup: { inline_keyboard: [[{ text: "↩ Retornar", callback_data: "catalog:return" }, { text: "⌂ Inicio", callback_data: "catalog:home" }]] } } : undefined);
+      await deliverCommandReply(conversation, text, { replyMarkup: isTelegram ? { inline_keyboard: [[{ text: "↩ Retornar", callback_data: "catalog:return" }, { text: "⌂ Inicio", callback_data: "catalog:home" }]] } : undefined, channel });
     } catch { await showCategories(); }
     return { handled: true };
   }
@@ -166,12 +172,13 @@ export async function processSlashCommand(input: {
         data: { conversation: { id: conversationId } },
       });
 
-      const profileRows = await db
-        .select()
-        .from(schema.agentProfile)
-        .where(scoped(schema.agentProfile.organizationId, organizationId))
-        .limit(1);
-      const profile = profileRows[0];
+      const profile = input.profile !== undefined
+        ? input.profile
+        : (await db
+            .select()
+            .from(schema.agentProfile)
+            .where(scoped(schema.agentProfile.organizationId, organizationId))
+            .limit(1))[0];
 
       const welcomeText = profile?.greeting?.trim()
         ? profile.greeting.trim()
@@ -181,9 +188,9 @@ export async function processSlashCommand(input: {
 
       const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
       if (isTelegram) {
-        await deliverCommandReply(conversation, welcomeText, { replyMarkup: buildMainMenuMarkup() });
+        await deliverCommandReply(conversation, welcomeText, { replyMarkup: buildMainMenuMarkup(), channel });
       } else {
-        await deliverCommandReply(conversation, welcomeText);
+        await deliverCommandReply(conversation, welcomeText, { channel });
       }
       return { handled: true };
     }
@@ -218,7 +225,7 @@ export async function processSlashCommand(input: {
       await updateState({ current_state: "menu:promos", active_step: "viewing_promos" });
       const productos = await buscarProductos({ organizationId, query: "promo" });
       const text = productos.length > 0
-        ? `⚡ *Promociones del Día*:\n` + productos.map((p) => `• ${p.name} (${p.sku}): $${(p.price / 100).toFixed(2)}`).join("\n")
+        ? `⚡ *Promociones del Día*:\n` + productos.map((p) => `• ${p.name} (${p.sku}): $${p.price.toLocaleString("es-CL")} CLP`).join("\n")
         : `Por el momento no hay promociones activas registradas.`;
       await deliverCommandReply(conversation, text);
       return { handled: true };
@@ -228,7 +235,7 @@ export async function processSlashCommand(input: {
       await updateState({ current_state: "menu:recommended", active_step: "viewing_recommended" });
       const productos = await buscarProductos({ organizationId, query: "*" });
       const text = productos.length > 0
-        ? `⭐ *Productos Mas Vendidos / Recomendados*:\n` + productos.map((p) => `• ${p.name} (${p.sku}): $${(p.price / 100).toFixed(2)}`).join("\n")
+        ? `⭐ *Productos Mas Vendidos / Recomendados*:\n` + productos.map((p) => `• ${p.name} (${p.sku}): $${p.price.toLocaleString("es-CL")} CLP`).join("\n")
         : `No hay productos recomendados configurados.`;
       await deliverCommandReply(conversation, text);
       return { handled: true };
@@ -256,8 +263,8 @@ export async function processSlashCommand(input: {
         const total = items.reduce((acc, i) => acc + i.quantity * i.unitPrice, 0);
         const text =
           `🛒 *Tu Carrito Actual*:\n` +
-          items.map((i) => `• ${i.name} x${i.quantity}: $${((i.quantity * i.unitPrice) / 100).toFixed(2)}`).join("\n") +
-          `\n\n*Total:* $${(total / 100).toFixed(2)}\n\nPara confirmar tu compra responde con la palabra "confirmar".`;
+          items.map((i) => `• ${i.name} x${i.quantity}: $${(i.quantity * i.unitPrice).toLocaleString("es-CL")} CLP`).join("\n") +
+          `\n\n*Total:* $${total.toLocaleString("es-CL")} CLP\n\nPara confirmar tu compra responde con la palabra "confirmar".`;
         await deliverCommandReply(conversation, text);
       }
       return { handled: true };
@@ -284,7 +291,7 @@ export async function processSlashCommand(input: {
         const text =
           `📋 *Tus Últimos Pedidos*:\n` +
           orderRows
-            .map((o) => `• N° ${o.orderNumber}: $${(o.totalAmount / 100).toFixed(2)} (Estado: ${o.status})`)
+            .map((o) => `• N° ${o.orderNumber}: $${o.totalAmount.toLocaleString("es-CL")} CLP (Estado: ${o.status})`)
             .join("\n");
         await deliverCommandReply(conversation, text);
       }
@@ -319,7 +326,7 @@ export async function processSlashCommand(input: {
 async function deliverCommandReply(
   conversation: Conversation,
   text: string,
-  opts?: { replyMarkup?: unknown }
+  opts?: { replyMarkup?: unknown; channel?: "wa" | "telegram" }
 ): Promise<void> {
   if (conversation.isTest) {
     const db = getDb();
@@ -342,5 +349,7 @@ async function deliverCommandReply(
     text,
     aiGenerated: true,
     replyMarkup: opts?.replyMarkup,
+    channel: opts?.channel,
+    row: { conversation },
   });
 }

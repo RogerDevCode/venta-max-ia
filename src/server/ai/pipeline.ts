@@ -31,6 +31,7 @@ type CoalesceEntry = {
   timer: ReturnType<typeof setTimeout> | null;
   running: boolean;
   pending: boolean;
+  pendingImmediate?: boolean;
 };
 
 const globalForAgent = globalThis as unknown as {
@@ -51,15 +52,15 @@ export function scheduleAgentTurn(conversationId: string, immediate = false): vo
     timer: null,
     running: false,
     pending: false,
+    pendingImmediate: false,
   };
   map.set(conversationId, entry);
 
   if (entry.running) {
+    entry.pending = true;
     if (immediate) {
-      // Para clics de botón/comandos: descartar el doble clic accidental por ráfaga
-      return;
+      entry.pendingImmediate = true;
     }
-    entry.pending = true; // para texto libre: se re-encola al terminar el turno
     return;
   }
   if (entry.timer) clearTimeout(entry.timer);
@@ -87,8 +88,14 @@ async function executeTurn(conversationId: string): Promise<void> {
   } finally {
     entry.running = false;
     if (entry.pending) {
+      const nextImmediate = entry.pendingImmediate ?? false;
       entry.pending = false;
-      void executeTurn(conversationId);
+      entry.pendingImmediate = false;
+      if (nextImmediate) {
+        void executeTurn(conversationId);
+      } else {
+        scheduleAgentTurn(conversationId, false);
+      }
     } else {
       map.delete(conversationId);
     }
@@ -144,6 +151,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
           command: slashCmd,
           conversation,
           lastInboundWaId: lastInbound.waMessageId,
+          profile,
         });
         if (cmdResult.handled) return;
       }
@@ -324,7 +332,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
             productos
               .map(
                 (p) =>
-                  `• ${p.name} (${p.sku}): $${(p.price / 100).toFixed(2)} (Stock: ${p.stock})`
+                  `• ${p.name} (${p.sku}): $${p.price.toLocaleString("es-CL")} CLP (Stock: ${p.stock})`
               )
               .join("\n")
           : `No encontré productos con "${action.query}".`;

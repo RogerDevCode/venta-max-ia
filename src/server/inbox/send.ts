@@ -47,46 +47,90 @@ export async function sendText(input: {
   aiGenerated?: boolean;
   replyMarkup?: unknown;
   parseMode?: "HTML" | "MarkdownV2";
+  channel?: "wa" | "telegram";
+  row?: {
+    conversation: typeof schema.conversation.$inferSelect;
+    contact?: typeof schema.contact.$inferSelect;
+  };
+  telegramCredentials?: { token: string; status: string } | null;
 }): Promise<SendResult> {
   const db = getDb();
 
-  const rows = await db
-    .select({
-      conversation: schema.conversation,
-      contact: schema.contact,
-    })
-    .from(schema.conversation)
-    .innerJoin(
-      schema.contact,
-      eq(schema.conversation.contactId, schema.contact.id)
-    )
-    .where(eq(schema.conversation.id, input.conversationId))
-    .limit(1);
-  const row = rows[0];
-  if (!row || row.conversation.organizationId !== input.organizationId) {
-    throw new SendError("meta_error", "Conversación no encontrada");
+  let conversation = input.row?.conversation;
+  let contact = input.row?.contact;
+  if (!conversation || !contact) {
+    if (conversation && !contact) {
+      const contactRows = await db
+        .select()
+        .from(schema.contact)
+        .where(eq(schema.contact.id, conversation.contactId))
+        .limit(1);
+      contact = contactRows[0];
+    } else {
+      const rows = await db
+        .select({
+          conversation: schema.conversation,
+          contact: schema.contact,
+        })
+        .from(schema.conversation)
+        .innerJoin(
+          schema.contact,
+          eq(schema.conversation.contactId, schema.contact.id)
+        )
+        .where(eq(schema.conversation.id, input.conversationId))
+        .limit(1);
+      conversation = rows[0]?.conversation;
+      contact = rows[0]?.contact;
+    }
   }
 
-  if (row.conversation.isTest) {
+  if (!conversation || conversation.organizationId !== input.organizationId || !contact) {
+    throw new SendError("meta_error", "Conversación no encontrada");
+  }
+  const row = { conversation, contact };
+
+  if (conversation.isTest) {
     throw new SendError(
       "sandbox_violation",
       "Conversación de prueba del Laboratorio: el envío real está prohibido"
     );
   }
 
-  const telegramCredentials = await getTelegramCredentialsByOrg(input.organizationId);
+  if (input.channel === "telegram") {
+    return sendTelegramText({
+      conversationId: input.conversationId,
+      organizationId: input.organizationId,
+      text: input.text,
+      aiGenerated: input.aiGenerated,
+      replyMarkup: input.replyMarkup,
+      parseMode: input.parseMode,
+      row,
+      telegramCredentials: input.telegramCredentials,
+    });
+  }
+
+  const telegramCredentials =
+    input.telegramCredentials !== undefined
+      ? input.telegramCredentials
+      : await getTelegramCredentialsByOrg(input.organizationId);
   if (!telegramCredentials || telegramCredentials.status !== "connected") {
     throw new SendError("not_connected", "Telegram no está conectado para esta organización");
   }
 
-  // Enrutamiento automático al canal Telegram si el último mensaje entrante fue de Telegram o si el contacto es Telegram ID
-  const lastMsgRows = await db
-    .select({ waMessageId: schema.message.waMessageId })
-    .from(schema.message)
-    .where(eq(schema.message.conversationId, input.conversationId))
-    .orderBy(desc(schema.message.createdAt))
-    .limit(1);
-  const isTelegram = lastMsgRows[0]?.waMessageId?.startsWith("tg_") ?? false;
+  let isTelegram = false;
+  if (input.channel === "wa") {
+    isTelegram = false;
+  } else {
+    // Enrutamiento automático al canal Telegram si el último mensaje entrante fue de Telegram o si el contacto es Telegram ID
+    const lastMsgRows = await db
+      .select({ waMessageId: schema.message.waMessageId })
+      .from(schema.message)
+      .where(eq(schema.message.conversationId, input.conversationId))
+      .orderBy(desc(schema.message.createdAt))
+      .limit(1);
+    isTelegram = lastMsgRows[0]?.waMessageId?.startsWith("tg_") ?? false;
+  }
+
   if (isTelegram) {
     return sendTelegramText({
       conversationId: input.conversationId,
@@ -95,6 +139,8 @@ export async function sendText(input: {
       aiGenerated: input.aiGenerated,
       replyMarkup: input.replyMarkup,
       parseMode: input.parseMode,
+      row,
+      telegramCredentials,
     });
   }
 
@@ -197,34 +243,58 @@ export async function sendTelegramText(input: {
   aiGenerated?: boolean;
   replyMarkup?: unknown;
   parseMode?: "HTML" | "MarkdownV2";
+  row?: {
+    conversation: typeof schema.conversation.$inferSelect;
+    contact?: typeof schema.contact.$inferSelect;
+  };
+  telegramCredentials?: { token: string; status: string } | null;
 }): Promise<SendResult> {
   const db = getDb();
 
-  const rows = await db
-    .select({
-      conversation: schema.conversation,
-      contact: schema.contact,
-    })
-    .from(schema.conversation)
-    .innerJoin(
-      schema.contact,
-      eq(schema.conversation.contactId, schema.contact.id)
-    )
-    .where(eq(schema.conversation.id, input.conversationId))
-    .limit(1);
-  const row = rows[0];
-  if (!row || row.conversation.organizationId !== input.organizationId) {
-    throw new SendError("telegram_error", "Conversación no encontrada");
+  let conversation = input.row?.conversation;
+  let contact = input.row?.contact;
+  if (!conversation || !contact) {
+    if (conversation && !contact) {
+      const contactRows = await db
+        .select()
+        .from(schema.contact)
+        .where(eq(schema.contact.id, conversation.contactId))
+        .limit(1);
+      contact = contactRows[0];
+    } else {
+      const rows = await db
+        .select({
+          conversation: schema.conversation,
+          contact: schema.contact,
+        })
+        .from(schema.conversation)
+        .innerJoin(
+          schema.contact,
+          eq(schema.conversation.contactId, schema.contact.id)
+        )
+        .where(eq(schema.conversation.id, input.conversationId))
+        .limit(1);
+      conversation = rows[0]?.conversation;
+      contact = rows[0]?.contact;
+    }
   }
 
-  if (row.conversation.isTest) {
+  if (!conversation || conversation.organizationId !== input.organizationId || !contact) {
+    throw new SendError("telegram_error", "Conversación no encontrada");
+  }
+  const row = { conversation, contact };
+
+  if (conversation.isTest) {
     throw new SendError(
       "sandbox_violation",
       "Conversación de prueba del Laboratorio: el envío real está prohibido"
     );
   }
 
-  const telegramCredentials = await getTelegramCredentialsByOrg(input.organizationId);
+  const telegramCredentials =
+    input.telegramCredentials !== undefined
+      ? input.telegramCredentials
+      : await getTelegramCredentialsByOrg(input.organizationId);
   if (!telegramCredentials || telegramCredentials.status !== "connected") {
     throw new SendError("not_connected", "Telegram no está conectado para esta organización");
   }

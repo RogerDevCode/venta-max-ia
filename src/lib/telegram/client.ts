@@ -2,9 +2,24 @@ import { getEnv } from "@/lib/env";
 import dns from "node:dns";
 
 // En entornos Linux con doble pila (dual-stack), api.telegram.org suele devolver AAAA (IPv6) y A (IPv4).
-// Como algunas rutas IPv6 caen en timeout en Node/undici, priorizamos resolución IPv4 a nivel de módulo.
+// Algunas rutas IPv6 descartan paquetes, así que el canal Telegram usa IPv4 de forma explícita.
 try {
   dns.setDefaultResultOrder("ipv4first");
+  const originalLookup = dns.lookup;
+  dns.lookup = ((hostname: string, options: unknown, callback: unknown) => {
+    if (typeof options === "function") {
+      return originalLookup(
+        hostname,
+        { family: 4 },
+        options as (error: NodeJS.ErrnoException | null, address: string, family: number) => void
+      );
+    }
+    return originalLookup(
+      hostname,
+      { ...(typeof options === "object" && options !== null ? options : {}), family: 4 },
+      callback as (error: NodeJS.ErrnoException | null, address: string, family: number) => void
+    );
+  }) as typeof dns.lookup;
 } catch {}
 
 /**
@@ -119,7 +134,7 @@ export async function telegramRequest<T>(
 export interface TelegramSendMessageOptions {
   chatId: string | number;
   text: string;
-  parseMode?: "HTML" | "MarkdownV2";
+  parseMode?: "HTML" | "MarkdownV2" | "Markdown";
   replyMarkup?: unknown;
   token?: string;
 }

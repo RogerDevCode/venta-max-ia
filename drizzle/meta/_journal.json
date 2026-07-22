@@ -50,6 +50,13 @@
       "when": 1784674177595,
       "tag": "0006_white_prima",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784743206391,
+      "tag": "0007_mysterious_proudstar",
+      "breakpoints": true
     }
   ]
 }

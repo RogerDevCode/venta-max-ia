@@ -1,8 +1,13 @@
-import { and, eq, ilike, or, type SQL } from "drizzle-orm";
+import { and, eq, ilike, isNull, or, type SQL } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { listCatalogProducts, listCategories } from "@/server/ecommerce/catalog";
+import {
+  commitMemoryOrderStock,
+  getCatalogCacheMap,
+  updateMemoryCartReservation,
+} from "@/server/ecommerce/cache";
 
 export interface CartItem {
   sku: string;
@@ -27,17 +32,41 @@ export async function buscarProductos(input: {
   organizationId: string;
   query: string;
 }) {
-  const db = getDb();
   const { organizationId, query } = input;
-  const qClean = query.trim();
+  const qClean = query.trim().toLowerCase();
 
+  const cached = getCatalogCacheMap().get(organizationId);
+  if (cached && cached.expiresAt > Date.now()) {
+    const isAll = !qClean || qClean === "*" || qClean === "todo";
+    const filtered = cached.products.filter((p) => {
+      if (!p.active || p.deletedAt) return false;
+      if (isAll) return true;
+      return (
+        p.name.toLowerCase().includes(qClean) ||
+        (p.sku && p.sku.toLowerCase().includes(qClean)) ||
+        (p.description && p.description.toLowerCase().includes(qClean))
+      );
+    });
+    return filtered
+      .slice(0, 10)
+      .map((p) => ({
+        id: p.id,
+        sku: p.sku,
+        name: p.name,
+        price: p.price,
+        stock: Math.max(0, p.stock - (cached.reservedStock.get(p.sku ?? p.id) ?? 0)),
+        description: p.description,
+      }));
+  }
+
+  const db = getDb();
   let condition: SQL<unknown> | undefined = scoped(
     schema.product.organizationId,
     organizationId,
-    eq(schema.product.active, true)
+    and(eq(schema.product.active, true), isNull(schema.product.deletedAt))
   );
 
-  if (qClean && qClean !== "*" && qClean.toLowerCase() !== "todo") {
+  if (qClean && qClean !== "*" && qClean !== "todo") {
     const pattern = `%${qClean}%`;
     const searchOr = or(
       ilike(schema.product.name, pattern),
@@ -85,7 +114,7 @@ export async function agregarAlCarrito(input: {
       scoped(
         schema.product.organizationId,
         organizationId,
-        and(eq(schema.product.sku, sku), eq(schema.product.active, true))
+        and(eq(schema.product.sku, sku), eq(schema.product.active, true), isNull(schema.product.deletedAt))
       )
     )
     .limit(1);
@@ -93,6 +122,16 @@ export async function agregarAlCarrito(input: {
   const producto = prodRows[0];
   if (!producto) {
     return { ok: false as const, error: "producto_no_encontrado" };
+  }
+
+  const cached = getCatalogCacheMap().get(organizationId);
+  if (cached && cached.expiresAt > Date.now()) {
+    const reserved = cached.reservedStock.get(producto.sku ?? producto.id) ?? 0;
+    if (producto.stock - reserved < cantidad) {
+      return { ok: false as const, error: "stock_insuficiente" };
+    }
+  } else if (producto.stock < cantidad) {
+    return { ok: false as const, error: "stock_insuficiente" };
   }
 
   // 2. Buscar si la conversación tiene un carrito activo
@@ -153,6 +192,7 @@ export async function agregarAlCarrito(input: {
     .returning();
 
   const updatedCart = updatedRows[0] || carrito;
+  updateMemoryCartReservation(organizationId, producto.sku ?? producto.id, cantidad);
 
   return { ok: true as const, cart: updatedCart, product: producto };
 }
@@ -222,6 +262,8 @@ export async function confirmarPedido(input: {
     .update(schema.cart)
     .set({ status: "converted", updatedAt: new Date() })
     .where(eq(schema.cart.id, carrito.id));
+
+  commitMemoryOrderStock(organizationId, items);
 
   return { ok: true as const, order: orderObj };
 }

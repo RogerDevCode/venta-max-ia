@@ -53,7 +53,7 @@ const envSchema = z.object({
   EMBEDDING_FALLBACK_MODEL: z.string().optional(),
   EMBEDDING_FALLBACK_PROVIDER: z.string().optional(),
   ALLOW_SIGNUP: z.string().optional(),
-  AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(1500),
+  AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(500),
   WA_MOCK_ENABLED: z.string().optional(),
   NODE_ENV: z.string().default("development"),
 });

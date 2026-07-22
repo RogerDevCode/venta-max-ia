@@ -1,7 +1,12 @@
-import { and, asc, count, desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNull } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import {
+  getCatalogCacheMap,
+  getOrLoadCatalogCache,
+  invalidateCatalogCache,
+} from "@/server/ecommerce/cache";
 
 export const MAX_CATEGORIES = 9;
 
@@ -63,17 +68,12 @@ export async function ensureGeneralCategory(organizationId: string) {
 
 export async function listCategories(organizationId: string) {
   await ensureGeneralCategory(organizationId);
-  const db = getDb();
-  return db
-    .select({
-      id: schema.category.id,
-      name: schema.category.name,
-      description: schema.category.description,
-      isGeneral: schema.category.isGeneral,
-    })
-    .from(schema.category)
-    .where(scoped(schema.category.organizationId, organizationId))
-    .orderBy(desc(schema.category.isGeneral), asc(schema.category.name));
+  const cached = getCatalogCacheMap().get(organizationId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.categories;
+  }
+  const loaded = await getOrLoadCatalogCache(organizationId);
+  return loaded.categories;
 }
 
 export async function createCategory(organizationId: string, input: CategoryInput) {
@@ -82,7 +82,7 @@ export async function createCategory(organizationId: string, input: CategoryInpu
   const db = getDb();
   await ensureGeneralCategory(organizationId);
   try {
-    return await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const total = await tx.select({ value: count() }).from(schema.category)
         .where(scoped(schema.category.organizationId, organizationId));
       if ((total[0]?.value ?? 0) >= MAX_CATEGORIES) throw new CatalogError("category_limit");
@@ -92,6 +92,8 @@ export async function createCategory(organizationId: string, input: CategoryInpu
       if (!rows[0]) throw new Error("No se pudo crear la categoría");
       return rows[0];
     });
+    invalidateCatalogCache(organizationId);
+    return result;
   } catch (err) {
     if (err instanceof CatalogError) throw err;
     throw new CatalogError("duplicate_category");
@@ -109,6 +111,7 @@ export async function updateCategory(organizationId: string, id: string, input: 
     const rows = await db.update(schema.category).set({ name: cleanName(input.name), description: input.description?.trim() || null, updatedAt: new Date() })
       .where(scoped(schema.category.organizationId, organizationId, eq(schema.category.id, id))).returning();
     if (!rows[0]) throw new CatalogError("category_not_found");
+    invalidateCatalogCache(organizationId);
     return rows[0];
   } catch (err) {
     if (err instanceof CatalogError) throw err;
@@ -118,7 +121,7 @@ export async function updateCategory(organizationId: string, id: string, input: 
 
 export async function deleteCategory(organizationId: string, id: string) {
   const db = getDb();
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const current = await tx.select().from(schema.category)
       .where(scoped(schema.category.organizationId, organizationId, eq(schema.category.id, id))).limit(1);
     if (!current[0]) throw new CatalogError("category_not_found");
@@ -127,10 +130,12 @@ export async function deleteCategory(organizationId: string, id: string) {
       .where(scoped(schema.category.organizationId, organizationId, eq(schema.category.isGeneral, true))).limit(1);
     if (!general[0]) throw new Error("La categoría General no existe");
     const moved = await tx.update(schema.product).set({ categoryId: general[0].id, updatedAt: new Date() })
-      .where(scoped(schema.product.organizationId, organizationId, eq(schema.product.categoryId, id))).returning({ id: schema.product.id });
+      .where(scoped(schema.product.organizationId, organizationId, and(eq(schema.product.categoryId, id), isNull(schema.product.deletedAt)))).returning({ id: schema.product.id });
     await tx.delete(schema.category).where(scoped(schema.category.organizationId, organizationId, eq(schema.category.id, id)));
     return { movedProducts: moved.length };
   });
+  invalidateCatalogCache(organizationId);
+  return result;
 }
 
 async function assertCategory(organizationId: string, categoryId: string) {
@@ -140,8 +145,21 @@ async function assertCategory(organizationId: string, categoryId: string) {
 }
 
 export async function listCatalogProducts(organizationId: string, categoryId?: string) {
+  const cached = getCatalogCacheMap().get(organizationId);
+  if (cached && cached.expiresAt > Date.now()) {
+    const prods = categoryId
+      ? cached.products.filter((p) => p.categoryId === categoryId && p.active && !p.deletedAt)
+      : cached.products.filter((p) => p.active && !p.deletedAt);
+    return prods.map((p) => ({
+      ...p,
+      stock: Math.max(0, p.stock - (cached.reservedStock.get(p.sku ?? p.id) ?? 0)),
+    }));
+  }
+
   const db = getDb();
-  const condition = categoryId ? and(eq(schema.product.categoryId, categoryId), eq(schema.product.active, true)) : undefined;
+  const condition = categoryId
+    ? and(eq(schema.product.categoryId, categoryId), eq(schema.product.active, true), isNull(schema.product.deletedAt))
+    : isNull(schema.product.deletedAt);
   return db.select().from(schema.product)
     .where(scoped(schema.product.organizationId, organizationId, condition)).orderBy(asc(schema.product.name));
 }
@@ -151,21 +169,51 @@ export async function createProduct(organizationId: string, input: ProductInput)
   try {
     const rows = await getDb().insert(schema.product).values({ id: newId("product"), organizationId, ...input, description: input.description?.trim() || null, sku: input.sku?.trim() || null, name: input.name.trim() }).returning();
     if (!rows[0]) throw new Error("No se pudo crear el producto");
+    invalidateCatalogCache(organizationId);
     return rows[0];
-  } catch { throw new CatalogError("duplicate_sku"); }
+  } catch (err: unknown) {
+    if (err instanceof CatalogError) throw err;
+    if (err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "23505") {
+      throw new CatalogError("duplicate_sku");
+    }
+    throw err;
+  }
 }
 
 export async function updateProduct(organizationId: string, id: string, input: ProductInput) {
   await assertCategory(organizationId, input.categoryId);
   try {
     const rows = await getDb().update(schema.product).set({ ...input, description: input.description?.trim() || null, sku: input.sku?.trim() || null, name: input.name.trim(), updatedAt: new Date() })
-      .where(scoped(schema.product.organizationId, organizationId, eq(schema.product.id, id))).returning();
+      .where(scoped(schema.product.organizationId, organizationId, and(eq(schema.product.id, id), isNull(schema.product.deletedAt)))).returning();
     if (!rows[0]) throw new CatalogError("product_not_found");
+    invalidateCatalogCache(organizationId);
     return rows[0];
-  } catch (err) { if (err instanceof CatalogError) throw err; throw new CatalogError("duplicate_sku"); }
+  } catch (err: unknown) {
+    if (err instanceof CatalogError) throw err;
+    if (err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "23505") {
+      throw new CatalogError("duplicate_sku");
+    }
+    throw err;
+  }
 }
 
 export async function deleteProduct(organizationId: string, id: string) {
-  const rows = await getDb().delete(schema.product).where(scoped(schema.product.organizationId, organizationId, eq(schema.product.id, id))).returning({ id: schema.product.id });
+  const db = getDb();
+  const current = await db.select().from(schema.product)
+    .where(scoped(schema.product.organizationId, organizationId, and(eq(schema.product.id, id), isNull(schema.product.deletedAt)))).limit(1);
+  if (!current[0]) throw new CatalogError("product_not_found");
+
+  const oldSku = current[0].sku;
+  const deletedSku = oldSku ? `${oldSku}#del-${id.slice(0, 8)}` : null;
+
+  const rows = await db.update(schema.product).set({
+    deletedAt: new Date(),
+    active: false,
+    sku: deletedSku,
+    updatedAt: new Date(),
+  })
+    .where(scoped(schema.product.organizationId, organizationId, eq(schema.product.id, id)))
+    .returning({ id: schema.product.id });
   if (!rows[0]) throw new CatalogError("product_not_found");
+  invalidateCatalogCache(organizationId);
 }

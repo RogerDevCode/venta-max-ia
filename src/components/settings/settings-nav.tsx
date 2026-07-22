@@ -15,7 +15,7 @@ const TABS = [
 export function SettingsNav() {
   const pathname = usePathname();
   return (
-    <nav className="w-44 shrink-0 space-y-1 border-r p-3">
+    <nav className="w-44 shrink-0 space-y-1 border-r border-border/80 bg-subtle/40 backdrop-blur-sm p-3 transition-colors duration-500">
       {TABS.map((t) => t.href === "/settings/whatsapp" ? (
         <span key={t.href} aria-disabled="true" title="WhatsApp está deshabilitado" className="block cursor-not-allowed rounded-md px-3 py-2 text-sm font-medium text-text-4">
           {t.label} <span className="text-xs">(deshabilitado)</span>

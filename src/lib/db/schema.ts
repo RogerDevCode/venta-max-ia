@@ -473,6 +473,7 @@ export const product = pgTable(
     stock: integer("stock").notNull().default(0),
     active: boolean("active").notNull().default(true),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

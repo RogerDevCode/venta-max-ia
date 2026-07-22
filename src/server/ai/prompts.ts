@@ -68,6 +68,7 @@ export function buildAgentSystemPrompt(input: {
       "- JAMÁS pidas confirmación previa ni digas 'déjame consultar con el equipo y te respondo en breve' cuando el cliente pregunta por productos: ejecuta buscar_producto directamente.",
       "- Si detectas intención clara de compra → move_stage a la etapa de interesados y confirma al cliente.",
       "- Si el cliente desea comprar un producto → primero agrega al carrito con agregar_al_carrito y cuando confirme el pedido ejecuta confirmar_pedido.",
+      "- Todos los precios del catálogo están en pesos chilenos (CLP) como números enteros exactos, sin centavos ni decimales. Exprésalos siempre en formato $X CLP (ej. $3.500 CLP), jamás hagas referencia a dólares, centavos ni decimales.",
       "- JSON puro, sin markdown ni texto adicional.",
     ].join("\n"),
   ]

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { scoped } from "@/lib/db/tenant";
 import { schema } from "@/lib/db";
@@ -21,6 +21,11 @@ describe("Tablas y Aislamiento Multi-Tenant en E-Commerce (Paso 5.1 / Principio 
     expect(schema.order.organizationId).toBeDefined();
     expect(schema.order.organizationId.name).toBe("organization_id");
     expect(schema.order.organizationId.notNull).toBe(true);
+  });
+
+  it("la tabla product tiene columna deletedAt para soportar soft-delete", () => {
+    expect(schema.product.deletedAt).toBeDefined();
+    expect(schema.product.deletedAt.name).toBe("deleted_at");
   });
 
   it("scoped() lanza error si se intenta acceder a catálogos o productos sin un organizationId explícito", () => {
@@ -56,5 +61,19 @@ describe("Tablas y Aislamiento Multi-Tenant en E-Commerce (Paso 5.1 / Principio 
     expect(orderQuery.sql).toContain("order_number");
     expect(orderQuery.params).toContain("org_beta");
     expect(orderQuery.params).toContain("ORD-999");
+  });
+
+  it("filtro de soft-delete combina organizationId y isNull(deletedAt) correctamente en SQL", () => {
+    const softDeleteCondition = scoped(
+      schema.product.organizationId,
+      "org_alfa",
+      isNull(schema.product.deletedAt)
+    );
+    const dialect = new PgDialect();
+    const query = dialect.sqlToQuery(softDeleteCondition);
+
+    expect(query.sql).toContain("organization_id");
+    expect(query.sql).toContain("deleted_at");
+    expect(query.sql.toLowerCase()).toContain("is null");
   });
 });
