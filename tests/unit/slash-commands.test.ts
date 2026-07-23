@@ -182,6 +182,72 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       );
     });
 
+    it("mantiene la relación exacta categoría → productos → producto para selección numérica", async () => {
+      mockListarCategorias.mockResolvedValueOnce([
+        { id: "cat_agua", name: "Aguas", description: null, isGeneral: false },
+        { id: "cat_bebidas", name: "Bebidas", description: null, isGeneral: false },
+        { id: "cat_cervezas", name: "Cervezas", description: null, isGeneral: false },
+      ]);
+      await processSlashCommand({
+        command: "menu:categorias",
+        conversation: mockDbState.conversation as never,
+        lastInboundWaId: "tg_12345",
+      });
+      const categoryState = (mockUpdateSet.mock.calls.at(-1)?.[0] as { stateMetadata: Record<string, unknown> }).stateMetadata;
+      expect(categoryState).toMatchObject({
+        current_state: "menu:catalog",
+        active_step: "viewing_catalog",
+        numeric_options: [
+          "catalog:category:cat_agua",
+          "catalog:category:cat_bebidas",
+          "catalog:category:cat_cervezas",
+        ],
+      });
+
+      mockDbState.conversation!.stateMetadata = categoryState;
+      mockListCatalogProducts.mockResolvedValueOnce([
+        { id: "prod_agua", name: "Agua", description: "1 litro", price: 1000, stock: 10 },
+        { id: "prod_coca", name: "Coca-Cola", description: "2 litros", price: 2500, stock: 8 },
+        { id: "prod_pepsi", name: "Pepsi-Cola", description: "2 litros", price: 2000, stock: 7 },
+      ]);
+      await processSlashCommand({
+        command: "catalog:number:2",
+        conversation: mockDbState.conversation as never,
+        lastInboundWaId: "tg_12345",
+      });
+      expect(mockListCatalogProducts).toHaveBeenCalledWith("org_cmd_123", "cat_bebidas");
+      const productState = (mockUpdateSet.mock.calls.at(-1)?.[0] as { stateMetadata: Record<string, unknown> }).stateMetadata;
+      expect(productState).toMatchObject({
+        current_state: "menu:catalog",
+        active_step: "viewing_category",
+        catalogCategoryId: "cat_bebidas",
+        numeric_options: [
+          "catalog:product:prod_agua",
+          "catalog:product:prod_coca",
+          "catalog:product:prod_pepsi",
+        ],
+      });
+
+      mockDbState.conversation!.stateMetadata = productState;
+      mockGetProduct.mockResolvedValueOnce({
+        id: "prod_pepsi",
+        categoryId: "cat_bebidas",
+        name: "Pepsi-Cola",
+        description: "2 litros",
+        price: 2000,
+        stock: 7,
+      });
+      await processSlashCommand({
+        command: "catalog:number:3",
+        conversation: mockDbState.conversation as never,
+        lastInboundWaId: "tg_12345",
+      });
+      expect(mockGetProduct).toHaveBeenCalledWith("org_cmd_123", "prod_pepsi");
+      expect(mockSendText).toHaveBeenLastCalledWith(expect.objectContaining({
+        text: "¿Cuántas unidades de Pepsi-Cola — 2 litros deseas agregar? Escribe un número.",
+      }));
+    });
+
     it("enumera productos con presentación y botones sin exponer SKU ni null", async () => {
       mockListCatalogProducts.mockResolvedValueOnce([
         { id: "prod_1", name: "Coca-Cola", description: "2 litros", price: 2500, stock: 5, sku: "SKU-ADMIN" },

@@ -10,6 +10,7 @@ import {
   clearActiveCart,
   confirmarPedido,
   editOrderAsCart,
+  listActiveOrders,
   mergeLatestOrderIntoActiveCart,
 } from "@/server/ecommerce/service";
 import { saveCommerceSettings } from "@/server/ecommerce/settings";
@@ -28,7 +29,10 @@ const limitProductId = newId("product");
 const raceProductId = newId("product");
 const lifecycleProductId = newId("product");
 const mergeProductId = newId("product");
-const conversationIds = Array.from({ length: 7 }, () => newId("conversation"));
+const mergeLifecycleProductAId = newId("product");
+const mergeLifecycleProductBId = newId("product");
+const mergeLifecycleProductCId = newId("product");
+const conversationIds = Array.from({ length: 8 }, () => newId("conversation"));
 
 describe.sequential("ecommerce cart and stock concurrency", () => {
   beforeAll(async () => {
@@ -44,6 +48,9 @@ describe.sequential("ecommerce cart and stock concurrency", () => {
       { id: raceProductId, organizationId, categoryId, name: "Cerveza", description: "500 ml", price: 2000, stock: 5 },
       { id: lifecycleProductId, organizationId, categoryId, name: "Jugo", description: "1 litro", price: 1500, stock: 100 },
       { id: mergeProductId, organizationId, categoryId, name: "Bebida", description: "2 litros", price: 2500, stock: 100 },
+      { id: mergeLifecycleProductAId, organizationId, categoryId, name: "Producto A", description: "Caja", price: 2500, stock: 100 },
+      { id: mergeLifecycleProductBId, organizationId, categoryId, name: "Producto B", description: "Bolsa", price: 1200, stock: 100 },
+      { id: mergeLifecycleProductCId, organizationId, categoryId, name: "Producto C", description: "Unidad", price: 800, stock: 100 },
     ]);
   });
 
@@ -187,5 +194,101 @@ describe.sequential("ecommerce cart and stock concurrency", () => {
     const product = await db.select({ stock: schema.product.stock }).from(schema.product)
       .where(and(eq(schema.product.organizationId, organizationId), eq(schema.product.id, mergeProductId))).limit(1);
     expect(product[0]?.stock).toBe(98);
+  });
+
+  it("une íntegramente el tercer y cuarto pedido y confirma el resultado como tercer pedido activo", async () => {
+    const conversationId = conversationIds[7]!;
+    await saveCommerceSettings(organizationId, { maxUnitsPerProduct: 10 });
+    const contact = await db.select({ contactId: schema.conversation.contactId }).from(schema.conversation)
+      .where(and(eq(schema.conversation.organizationId, organizationId), eq(schema.conversation.id, conversationId))).limit(1);
+
+    await addProductToCart({ organizationId, conversationId, productId: mergeLifecycleProductAId, quantity: 1 });
+    const first = await confirmarPedido({ organizationId, conversationId });
+    expect(first).toMatchObject({ ok: true });
+
+    await addProductToCart({ organizationId, conversationId, productId: mergeLifecycleProductBId, quantity: 1 });
+    const second = await confirmarPedido({ organizationId, conversationId });
+    expect(second).toMatchObject({ ok: true });
+
+    await addProductToCart({ organizationId, conversationId, productId: mergeLifecycleProductAId, quantity: 2 });
+    await addProductToCart({ organizationId, conversationId, productId: mergeLifecycleProductBId, quantity: 2 });
+    const third = await confirmarPedido({ organizationId, conversationId });
+    expect(third).toMatchObject({ ok: true });
+    if (!third.ok) throw new Error("Expected third order");
+    await db.update(schema.order).set({ createdAt: new Date(Date.now() + 1_000) })
+      .where(and(eq(schema.order.organizationId, organizationId), eq(schema.order.id, third.order.id)));
+
+    await addProductToCart({ organizationId, conversationId, productId: mergeLifecycleProductAId, quantity: 3 });
+    await addProductToCart({ organizationId, conversationId, productId: mergeLifecycleProductCId, quantity: 2 });
+    const fourthAttempt = await confirmarPedido({ organizationId, conversationId });
+    expect(fourthAttempt).toMatchObject({
+      ok: false,
+      error: "active_order_limit",
+      limit: 3,
+      candidateOrder: { id: third.order.id },
+    });
+    if (fourthAttempt.ok || fourthAttempt.error !== "active_order_limit") {
+      throw new Error("Expected fourth-order authorization");
+    }
+
+    const merged = await mergeLatestOrderIntoActiveCart({
+      organizationId,
+      conversationId,
+      candidateOrderId: fourthAttempt.candidateOrder.id,
+    });
+    expect(merged).toMatchObject({
+      ok: true,
+      order: { id: third.order.id, status: "cancelled" },
+      cart: {
+        reopenedFromOrderId: third.order.id,
+        status: "active",
+        items: expect.arrayContaining([
+          expect.objectContaining({ productId: mergeLifecycleProductAId, quantity: 5, unitPrice: 2500 }),
+          expect.objectContaining({ productId: mergeLifecycleProductBId, quantity: 2, unitPrice: 1200 }),
+          expect.objectContaining({ productId: mergeLifecycleProductCId, quantity: 2, unitPrice: 800 }),
+        ]),
+      },
+    });
+
+    const activeAfterMerge = await listActiveOrders({ organizationId, contactId: contact[0]!.contactId });
+    expect(activeAfterMerge).toHaveLength(2);
+
+    const combined = await confirmarPedido({ organizationId, conversationId });
+    expect(combined).toMatchObject({
+      ok: true,
+      order: {
+        totalAmount: 16_500,
+        status: "confirmed",
+        items: expect.arrayContaining([
+          expect.objectContaining({ productId: mergeLifecycleProductAId, quantity: 5, unitPrice: 2500 }),
+          expect.objectContaining({ productId: mergeLifecycleProductBId, quantity: 2, unitPrice: 1200 }),
+          expect.objectContaining({ productId: mergeLifecycleProductCId, quantity: 2, unitPrice: 800 }),
+        ]),
+      },
+    });
+
+    const activeFinal = await listActiveOrders({ organizationId, contactId: contact[0]!.contactId });
+    expect(activeFinal).toHaveLength(3);
+    expect(activeFinal.some((order) => order.id === third.order.id)).toBe(false);
+    if (!combined.ok) throw new Error("Expected combined order");
+    expect(activeFinal.some((order) => order.id === combined.order.id)).toBe(true);
+
+    const carts = await db.select().from(schema.cart).where(and(
+      eq(schema.cart.organizationId, organizationId),
+      eq(schema.cart.conversationId, conversationId)
+    ));
+    expect(carts.filter((cart) => cart.status === "active")).toHaveLength(0);
+    expect(carts.filter((cart) => cart.status === "converted")).toHaveLength(4);
+
+    const stocks = await db.select({ id: schema.product.id, stock: schema.product.stock }).from(schema.product)
+      .where(and(
+        eq(schema.product.organizationId, organizationId),
+        inArray(schema.product.id, [mergeLifecycleProductAId, mergeLifecycleProductBId, mergeLifecycleProductCId])
+      ));
+    expect(Object.fromEntries(stocks.map((product) => [product.id, product.stock]))).toEqual({
+      [mergeLifecycleProductAId]: 94,
+      [mergeLifecycleProductBId]: 97,
+      [mergeLifecycleProductCId]: 98,
+    });
   });
 });
