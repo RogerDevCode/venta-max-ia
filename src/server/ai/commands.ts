@@ -47,8 +47,8 @@ export function parseSlashCommand(text?: string | null): SlashCommandType | null
     }
   }
 
-  // 3. Manejo de selección numérica por texto (1..6)
-  if (/^[1-9]$/.test(clean)) return `catalog:number:${clean}`;
+  // 3. Selección numérica contextual: menú principal, categoría o producto.
+  if (/^[1-9][0-9]*$/.test(clean)) return `catalog:number:${clean}`;
   return null;
 }
 
@@ -120,7 +120,13 @@ export async function processSlashCommand(input: {
 
   async function showCategories() {
     const categorias = await listarCategorias(organizationId);
-    await updateState({ current_state: "menu:catalog", active_step: "viewing_catalog", catalogCategoryIds: categorias.map((c) => c.id), catalogCategoryId: null });
+    await updateState({
+      current_state: "menu:catalog",
+      active_step: "viewing_catalog",
+      catalogCategoryIds: categorias.map((c) => c.id),
+      catalogCategoryId: null,
+      catalogProductIds: null,
+    });
     const text = `📁 *Categorías de Productos*:\n${categorias.map((c, index) => `${index + 1}. *${c.name}*${c.description ? `: ${c.description}` : ""}`).join("\n")}\n\nElige una categoría con su botón o número.`;
     const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
     const rows = categorias.map((c, index) => [{ text: `${index + 1}. ${c.name}`, callback_data: `catalog:category:${c.id}` }]);
@@ -164,7 +170,13 @@ export async function processSlashCommand(input: {
     return { handled: true };
   }
   if (command === "catalog:home") {
-    await updateState({ current_state: "menu:main", active_step: "main_menu", catalogCategoryIds: null, catalogCategoryId: null });
+    await updateState({
+      current_state: "menu:main",
+      active_step: "main_menu",
+      catalogCategoryIds: null,
+      catalogCategoryId: null,
+      catalogProductIds: null,
+    });
     const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
     await deliverCommandReply(conversation, "📌 *Menú Principal — VentaMaxIA*\nSelecciona una opción:", { replyMarkup: isTelegram ? buildMainMenuMarkup() : undefined, channel });
     return { handled: true };
@@ -173,9 +185,24 @@ export async function processSlashCommand(input: {
   if (command.startsWith("catalog:category:")) categoryId = command.slice("catalog:category:".length);
   if (command.startsWith("catalog:number:")) {
     const number = Number(command.slice("catalog:number:".length));
-    const ids = Array.isArray(currentState.catalogCategoryIds) ? currentState.catalogCategoryIds.filter((id): id is string => typeof id === "string") : [];
-    if (currentState.current_state === "menu:catalog" && number > 0 && number <= ids.length) categoryId = ids[number - 1] ?? null;
-    else {
+    const productIds = Array.isArray(currentState.catalogProductIds)
+      ? currentState.catalogProductIds.filter((id): id is string => typeof id === "string")
+      : [];
+    const categoryIds = Array.isArray(currentState.catalogCategoryIds)
+      ? currentState.catalogCategoryIds.filter((id): id is string => typeof id === "string")
+      : [];
+    if (currentState.current_state === "menu:catalog" && currentState.active_step === "viewing_category") {
+      let productId = productIds[number - 1];
+      if (!productId && productIds.length === 0 && typeof currentState.catalogCategoryId === "string") {
+        const products = await listCatalogProducts(organizationId, currentState.catalogCategoryId);
+        productId = products[number - 1]?.id;
+      }
+      if (productId) return processSlashCommand({ ...input, command: `catalog:product:${productId}` });
+      return { handled: true };
+    }
+    if (currentState.current_state === "menu:catalog" && currentState.active_step === "viewing_catalog") {
+      categoryId = categoryIds[number - 1] ?? null;
+    } else {
       const main = ["menu:categorias", "menu:promociones", "menu:mas_vendidos", "menu:carrito", "menu:pedidos", "menu:humano"][number - 1];
       if (main) return processSlashCommand({ ...input, command: main as SlashCommandType });
     }
@@ -183,7 +210,12 @@ export async function processSlashCommand(input: {
   if (categoryId) {
     try {
       const products = await listCatalogProducts(organizationId, categoryId);
-      await updateState({ current_state: "menu:catalog", active_step: "viewing_category", catalogCategoryId: categoryId });
+      await updateState({
+        current_state: "menu:catalog",
+        active_step: "viewing_category",
+        catalogCategoryId: categoryId,
+        catalogProductIds: products.map((product) => product.id),
+      });
       const text = products.length
         ? `🛍️ *Productos*:\n${products.map((p, index) => `${index + 1}. ${customerProductLabel(p)} — $${p.price.toLocaleString("es-CL")} CLP`).join("\n")}\n\nSelecciona un producto.`
         : "Esta categoría no tiene productos activos.";

@@ -112,6 +112,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       expect(parseSlashCommand("4")).toBe("catalog:number:4");
       expect(parseSlashCommand("5")).toBe("catalog:number:5");
       expect(parseSlashCommand("6")).toBe("catalog:number:6");
+      expect(parseSlashCommand("12")).toBe("catalog:number:12");
       expect(parseSlashCommand("catalog:product:prod_1")).toBe("catalog:product:prod_1");
     });
   });
@@ -200,6 +201,32 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       expect(mockSendText).toHaveBeenCalledWith(expect.objectContaining({
         text: "¿Cuántas unidades de Coca-Cola — 2 litros deseas agregar? Escribe un número.",
       }));
+    });
+
+    it("interpreta el número dentro de una categoría como producto y no como categoría", async () => {
+      mockDbState.conversation!.stateMetadata = {
+        current_state: "menu:catalog",
+        active_step: "viewing_category",
+        catalogCategoryId: "cat_bebidas",
+        catalogCategoryIds: ["cat_agua", "cat_gaseosas", "cat_cervezas"],
+        catalogProductIds: ["prod_agua", "prod_coca", "prod_pepsi"],
+      };
+      mockGetProduct.mockResolvedValueOnce({
+        id: "prod_pepsi", categoryId: "cat_bebidas", name: "Pepsi-Cola",
+        description: "2 litros", price: 2000, stock: 5,
+      });
+
+      await processSlashCommand({
+        command: "catalog:number:3",
+        conversation: mockDbState.conversation as never,
+        lastInboundWaId: "tg_12345",
+      });
+
+      expect(mockGetProduct).toHaveBeenCalledWith("org_cmd_123", "prod_pepsi");
+      expect(mockSendText).toHaveBeenCalledWith(expect.objectContaining({
+        text: "¿Cuántas unidades de Pepsi-Cola — 2 litros deseas agregar? Escribe un número.",
+      }));
+      expect(mockListCatalogProducts).not.toHaveBeenCalledWith("org_cmd_123", "cat_cervezas");
     });
 
     it("valida la cantidad y confirma el carrito", async () => {
