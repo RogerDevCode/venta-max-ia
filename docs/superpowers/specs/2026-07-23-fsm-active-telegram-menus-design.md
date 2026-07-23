@@ -19,16 +19,9 @@ como mediante los textos `i`/`I` y `r`/`R`.
 - `parent`: estado o ámbito anterior, para resolver Retornar.
 
 Al enviar un teclado Telegram, el servidor recibirá su `message_id` y persistirá
-el nuevo menú activo. La escritura será una mutación PostgreSQL `jsonb_set`
-scoped por organización que reemplaza exclusivamente la clave `activeMenu` del
-JSONB almacenado. Nunca reconstruirá `stateMetadata` desde el objeto de
-conversación recibido por el emisor, porque ese objeto puede ser anterior a la
-transición FSB que originó el mensaje.
-
-La versión se calculará dentro de PostgreSQL a partir del menú persistido, y los
-campos `state` y `parent` se tomarán del `current_state` vigente en la misma
-sentencia. Así, una respuesta tardía no revierte `current_state`, `active_step`,
-identificadores del catálogo ni otras variables acumuladas.
+el nuevo menú activo. La escritura se hará scoped por organización y de forma
+condicional para que un menú anterior no pueda reemplazar accidentalmente a uno
+más reciente.
 
 ## Ingreso y consumo de callbacks
 
@@ -74,15 +67,3 @@ Todo submenú Telegram incluirá al final una fila con los botones `↩ Retornar
    mismo resultado que sus botones.
 5. Los teclados usados y vencidos permanecen visibles, pero sus callbacks no
    alteran el estado ni ingresan al agente.
-6. La matriz real de Telegram acepta las seis opciones del menú principal y
-   mantiene coherentes `current_state` y `activeMenu.state`.
-7. Categoría → Retornar vuelve al listado; Retornar desde el listado e Inicio
-   vuelven al menú principal; un callback de un `message_id` previo se rechaza.
-
-## Evidencia previa al ajuste
-
-La prueba E2E contra `@ventamaxiabot` mostró que las seis acciones principales
-fueron rechazadas. Después de `/menu`, el mensaje activo conservó
-`current_state=menu:catalog`: el emisor había sobrescrito la transición
-`menu:main` con un snapshot anterior. Esta regresión es el caso obligatorio que
-debe fallar antes del cambio y pasar después de `jsonb_set`.
