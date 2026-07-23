@@ -39,12 +39,10 @@ export function AppNav({
   const [unread, setUnread] = useState(0);
 
   async function refetchUnread() {
-    const res = await fetch("/api/conversations").catch(() => null);
+    const res = await fetch("/api/conversations/unread").catch(() => null);
     if (!res?.ok) return;
-    const data = (await res.json()) as {
-      conversations: { unreadCount: number }[];
-    };
-    setUnread(data.conversations.reduce((a, c) => a + c.unreadCount, 0));
+    const data = (await res.json()) as { unread: number };
+    setUnread(data.unread ?? 0);
   }
 
   useEffect(() => {
@@ -82,6 +80,7 @@ export function AppNav({
             <Link
               key={item.href}
               href={item.href}
+              prefetch={true}
               className={cn(
                 "flex items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
                 active
@@ -113,6 +112,7 @@ export function AppNav({
 
       <Link
         href="/settings"
+        prefetch={true}
         className={cn(
           "flex items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
           pathname.startsWith("/settings")

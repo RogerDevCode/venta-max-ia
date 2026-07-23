@@ -14,37 +14,38 @@ free_port() {
   local port="$1"
   local pids=""
 
-  if command -v lsof >/dev/null 2>&1; then
-    pids=$(lsof -ti:"$port" 2>/dev/null || true)
-  elif command -v fuser >/dev/null 2>&1; then
-    pids=$(fuser "$port"/tcp 2>/dev/null | tr -s ' ' '\n' || true)
-  elif command -v ss >/dev/null 2>&1; then
-    pids=$(ss -tulpn "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u || true)
-  fi
+  for attempt in 1 2 3 4 5; do
+    pids=""
+    if command -v lsof >/dev/null 2>&1 && lsof -ti:"$port" >/dev/null 2>&1; then
+      pids=$(lsof -ti:"$port" 2>/dev/null || true)
+    elif command -v fuser >/dev/null 2>&1; then
+      pids=$(fuser "$port"/tcp 2>/dev/null | tr -s ' ' '\n' || true)
+    elif command -v ss >/dev/null 2>&1; then
+      pids=$(ss -tulpn 2>/dev/null | grep ":$port " | grep -oP 'pid=\K[0-9]+' | sort -u || true)
+    fi
 
-  pids=$(echo "$pids" | xargs || true)
+    if [ "$port" = "3000" ]; then
+      local extra_pids=$(pgrep -f "next-server|next dev" || true)
+      pids=$(echo "$pids $extra_pids" | xargs -n1 2>/dev/null | sort -u | xargs || true)
+    else
+      pids=$(echo "$pids" | xargs || true)
+    fi
 
-  if [ -n "$pids" ]; then
-    echo "==> [RUN] El puerto $port está ocupado por el/los proceso(s) PID: $pids. Eliminando (kill)..."
+    if [ -z "$pids" ]; then
+      echo "[+] El puerto $port se encuentra libre."
+      return 0
+    fi
+
+    echo "==> [RUN] El puerto $port está ocupado por el/los proceso(s) PID: $pids (intento $attempt/5). Eliminando con kill -9..."
     for pid in $pids; do
       if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-        echo "[+] Enviando SIGTERM al proceso PID $pid..."
-        kill "$pid" 2>/dev/null || true
-      fi
-    done
-    sleep 1
-
-    for pid in $pids; do
-      if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-        echo "[!] El proceso PID $pid no finalizó con SIGTERM. Enviando SIGKILL (-9)..."
         kill -9 "$pid" 2>/dev/null || true
       fi
     done
     sleep 1
-    echo "[+] Puerto $port liberado exitosamente."
-  else
-    echo "[+] El puerto $port se encuentra libre."
-  fi
+  done
+
+  echo "[+] Puerto $port liberado exitosamente."
 }
 
 # 2. Liberar el puerto 3000 si estuviera ocupado

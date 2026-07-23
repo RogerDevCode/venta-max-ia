@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { count, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
@@ -65,9 +66,27 @@ export async function resolveActiveOrganizationId(
   return (await resolveMembership(userId))?.organizationId ?? null;
 }
 
-export async function resolveMembership(
+const MEMBERSHIP_TTL_MS = 15000;
+declare global {
+  // eslint-disable-next-line no-var
+  var __membershipCache: Map<string, { membership: { organizationId: string; role: string } | null; expiresAt: number }> | undefined;
+}
+function getMembershipCache() {
+  if (!globalThis.__membershipCache) {
+    globalThis.__membershipCache = new Map();
+  }
+  return globalThis.__membershipCache;
+}
+
+export const resolveMembership = cache(async (
   userId: string
-): Promise<{ organizationId: string; role: string } | null> {
+): Promise<{ organizationId: string; role: string } | null> => {
+  const cacheMap = getMembershipCache();
+  const cached = cacheMap.get(userId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.membership;
+  }
+
   const db = getDb();
   const rows = await db
     .select({
@@ -77,5 +96,7 @@ export async function resolveMembership(
     .from(schema.member)
     .where(eq(schema.member.userId, userId))
     .limit(1);
-  return rows[0] ?? null;
-}
+  const result = rows[0] ?? null;
+  cacheMap.set(userId, { membership: result, expiresAt: Date.now() + MEMBERSHIP_TTL_MS });
+  return result;
+});
