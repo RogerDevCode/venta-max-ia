@@ -63,6 +63,7 @@ vi.mock("@/server/ecommerce/service", async (importOriginal) => {
     getProductForCustomer: vi.fn().mockResolvedValue(null),
     addProductToCart: vi.fn(),
     confirmarPedido: vi.fn(),
+    getOrderForCustomer: vi.fn(),
   };
 });
 
@@ -200,21 +201,24 @@ describe("Simulación E2E de Compra en E-Commerce con IA (Paso 5.2)", () => {
   });
 
   it("3. confirmar_pedido crea la orden formal en BD y ¡mueve automáticamente el lead a la etapa 'Interesado / Pedido' en el Kanban!", async () => {
+    const confirmedOrder = {
+      id: "ord_abc",
+      organizationId: "org_ecom",
+      contactId: "con_ecom",
+      conversationId: "conv_ecom",
+      cartId: "crt_1",
+      orderNumber: "ORD-777888",
+      items: [],
+      totalAmount: 7000000,
+      status: "confirmed" as const,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
     vi.mocked(ecommerceService.confirmarPedido).mockResolvedValueOnce({
       ok: true,
-      order: {
-        id: "ord_abc",
-        organizationId: "org_ecom",
-        conversationId: "conv_ecom",
-        cartId: "crt_1",
-        orderNumber: "ORD-777888",
-        items: [],
-        totalAmount: 7000000,
-        status: "confirmed",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
+      order: confirmedOrder,
     });
+    vi.mocked(ecommerceService.getOrderForCustomer).mockResolvedValueOnce(confirmedOrder);
 
     mockChatJson.mockResolvedValueOnce({
       ok: true,

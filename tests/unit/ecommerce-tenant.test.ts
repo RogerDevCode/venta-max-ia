@@ -21,6 +21,8 @@ describe("Tablas y Aislamiento Multi-Tenant en E-Commerce (Paso 5.1 / Principio 
     expect(schema.order.organizationId).toBeDefined();
     expect(schema.order.organizationId.name).toBe("organization_id");
     expect(schema.order.organizationId.notNull).toBe(true);
+    expect(schema.order.contactId.name).toBe("contact_id");
+    expect(schema.order.contactId.notNull).toBe(true);
   });
 
   it("la tabla product tiene columna deletedAt para soportar soft-delete", () => {

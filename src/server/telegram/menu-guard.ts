@@ -3,6 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { decodeMenuCallback } from "@/server/telegram/menu-codec";
+import { stateKey } from "@/server/ai/menu-fsm";
 
 export type MenuCallbackDecision =
   | { accepted: true; action: string; actionId: string }
@@ -39,8 +40,8 @@ export async function acceptTelegramMenuCallback(input: {
     const row = rows[0];
     const action = row?.menu.allowedActions[decoded.optionIndex];
     const state = (row?.stateMetadata ?? {}) as Record<string, unknown>;
-    const currentState = typeof state.current_state === "string" ? state.current_state : "menu:main";
-    if (!row || typeof action !== "string" || row.menu.fsbState !== currentState) return { accepted: false };
+    const currentStateKey = stateKey(state);
+    if (!row || typeof action !== "string" || row.menu.fsbState !== currentStateKey) return { accepted: false };
 
     const consumed = await tx.update(schema.telegramMenuInstance).set({ status: "consumed", consumedAt: new Date() })
       .where(scoped(schema.telegramMenuInstance.organizationId, input.organizationId,
@@ -50,7 +51,25 @@ export async function acceptTelegramMenuCallback(input: {
           sql`exists (select 1 from ${schema.conversation}
             where ${schema.conversation.id} = ${schema.telegramMenuInstance.conversationId}
               and ${schema.conversation.organizationId} = ${input.organizationId}
-              and coalesce(${schema.conversation.stateMetadata}->>'current_state', 'menu:main') = ${row.menu.fsbState})`
+              and concat(
+                coalesce(${schema.conversation.stateMetadata}->>'current_state', 'menu:main'),
+                '/',
+                coalesce(
+                  ${schema.conversation.stateMetadata}->>'active_step',
+                  case coalesce(${schema.conversation.stateMetadata}->>'current_state', 'menu:main')
+                    when 'menu:main' then 'main_menu'
+                    when 'menu:catalog' then 'viewing_catalog'
+                    when 'menu:promos' then 'viewing_promos'
+                    when 'menu:recommended' then 'viewing_recommended'
+                    when 'menu:cart' then 'viewing_cart'
+                    when 'menu:orders' then 'viewing_orders'
+                    when 'menu:order_detail' then 'viewing_order_detail'
+                    when 'cart:awaiting_quantity' then 'awaiting_product_quantity'
+                    when 'handoff:humano' then 'awaiting_human'
+                    else 'unknown'
+                  end
+                )
+              ) = ${row.menu.fsbState})`
         )))
       .returning({ id: schema.telegramMenuInstance.id });
     if (!consumed[0]) return { accepted: false };

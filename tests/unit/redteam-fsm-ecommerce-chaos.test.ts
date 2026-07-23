@@ -7,14 +7,15 @@ import { runAgentTurn } from "@/server/ai/pipeline";
 const { mockDbState, mockUpdateSet, mockSendText, mockSchema, mockChatJson, mockBuildRagContext } =
   vi.hoisted(() => {
     const schemaObj = {
-      conversation: { id: "id", lastInboundAt: "last_inbound_at", organizationId: "organization_id", stateMetadata: "state_metadata" },
+      conversation: { id: "id", contactId: "contact_id", lastInboundAt: "last_inbound_at", organizationId: "organization_id", stateMetadata: "state_metadata" },
+      contact: { id: "id", organizationId: "organization_id" },
       agentProfile: { organizationId: "organization_id" },
       message: { conversationId: "conversation_id", createdAt: "created_at" },
       pipelineStage: { organizationId: "organization_id", position: "position" },
       lead: { contactId: "contact_id", organizationId: "organization_id" },
       product: { id: "id", organizationId: "organization_id", sku: "sku", active: "active", name: "name", price: "price", stock: "stock", description: "description" },
       cart: { id: "id", organizationId: "organization_id", conversationId: "conversation_id", status: "status", items: "items" },
-      order: { id: "id", organizationId: "organization_id", conversationId: "conversation_id", cartId: "cart_id", orderNumber: "order_number", items: "items", totalAmount: "total_amount", status: "status" },
+      order: { id: "id", organizationId: "organization_id", contactId: "contact_id", conversationId: "conversation_id", cartId: "cart_id", orderNumber: "order_number", items: "items", totalAmount: "total_amount", status: "status" },
       commerceSettings: { organizationId: "organization_id", maxUnitsPerProduct: "max_units_per_product" },
     };
     return {

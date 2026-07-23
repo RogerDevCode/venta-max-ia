@@ -77,9 +77,10 @@ export function stateKey(state: MenuStateMetadata | null | undefined): string {
   return `${currentState}/${activeStep}`;
 }
 
-function actionAllowed(rule: TransitionRule, action: string): boolean {
+function actionAllowed(rule: TransitionRule, action: string, numericOptions: string[]): boolean {
+  if (!numericOptions.includes(action)) return false;
+  if (rule.exactActions?.includes(action)) return true;
   return Boolean(
-    rule.exactActions?.includes(action) ||
     rule.actionPrefixes?.some((prefix) => action.startsWith(prefix) && action.length > prefix.length)
   );
 }
@@ -120,7 +121,7 @@ export function resolveMenuInput(state: MenuStateMetadata, input: MenuInput): Me
   if (!action) return { kind: "ignore" };
   if (action === "nav:home") return resolveMenuInput(state, { type: "home" });
   if (action === "nav:back") return resolveMenuInput(state, { type: "back" });
-  return actionAllowed(rule, action)
+  return actionAllowed(rule, action, strings(state.numeric_options))
     ? { kind: "action", action }
     : { kind: "ignore" };
 }

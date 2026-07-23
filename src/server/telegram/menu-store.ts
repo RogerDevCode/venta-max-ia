@@ -3,6 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { encodeMenuCallback } from "@/server/telegram/menu-codec";
+import { stateKey } from "@/server/ai/menu-fsm";
 
 type InlineButton = { text: string; callback_data?: string; [key: string]: unknown };
 export type InlineKeyboard = { inline_keyboard: InlineButton[][] };
@@ -52,7 +53,7 @@ export async function reserveTelegramMenu(input: {
       conversationId: input.conversationId,
       chatId: input.chatId,
       generation,
-      fsbState: typeof state.current_state === "string" ? state.current_state : "menu:main",
+      fsbState: stateKey(state),
       allowedActions: encoded.allowedActions,
       status: "pending",
     });

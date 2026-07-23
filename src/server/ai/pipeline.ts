@@ -16,6 +16,7 @@ import {
   confirmarPedido,
 } from "@/server/ecommerce/service";
 import { parseSlashCommand, processPendingProductQuantity, processSlashCommand } from "@/server/ai/commands";
+import { resolveMenuInput, type MenuStateMetadata } from "@/server/ai/menu-fsm";
 
 /**
  * Turno del agente (FR-021..FR-025).
@@ -143,12 +144,9 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   const state = (conversation.stateMetadata ?? {}) as Record<string, unknown>;
   if (lastInbound.text && state.current_state === "cart:awaiting_quantity") {
     const navigation = parseSlashCommand(lastInbound.text);
-    if (navigation === "catalog:home" || navigation === "catalog:return") {
-      const command = navigation === "catalog:return" && typeof state.catalogCategoryId === "string"
-        ? `catalog:category:${state.catalogCategoryId}` as const
-        : navigation;
+    if (navigation === "nav:home" || navigation === "nav:back") {
       const result = await processSlashCommand({
-        command, conversation, lastInboundWaId: lastInbound.waMessageId, profile,
+        command: navigation, conversation, lastInboundWaId: lastInbound.waMessageId, profile,
       });
       if (result.handled) return;
     }
@@ -159,8 +157,25 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
 
   // Intercepción directa de Comandos Slash (/start, /menu, /reset, /humano)
   if (lastInbound.text) {
-    const slashCmd = parseSlashCommand(lastInbound.text);
+    let slashCmd = parseSlashCommand(lastInbound.text);
     if (slashCmd) {
+      const contextual =
+        slashCmd.startsWith("menu:") ||
+        slashCmd.startsWith("nav:") ||
+        slashCmd.startsWith("catalog:category:") ||
+        slashCmd.startsWith("catalog:product:") ||
+        slashCmd.startsWith("cart:") ||
+        slashCmd.startsWith("order:");
+      if (contextual) {
+        const decision = resolveMenuInput(state as MenuStateMetadata,
+          slashCmd === "nav:home"
+            ? { type: "home" }
+            : slashCmd === "nav:back"
+              ? { type: "back" }
+              : { type: "action", action: slashCmd });
+        if (decision.kind === "ignore") return;
+        if (decision.kind === "action") slashCmd = decision.action as typeof slashCmd;
+      }
       // /start y /reset se permiten siempre incluso si la conversación estaba en handoff humano
       if (!conversation.handoffAt || slashCmd === "start" || slashCmd === "reset") {
         const cmdResult = await processSlashCommand({
@@ -399,9 +414,18 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
           action.reply ||
           `¡Pedido confirmado exitosamente! Número de pedido: ${res.order.orderNumber}.`;
         await deliverReply(conversation, resText);
+        await processSlashCommand({
+          command: `order:detail:${res.order.id}`,
+          conversation,
+          lastInboundWaId: lastInbound?.waMessageId,
+          profile,
+          navigationStack: ["menu:main", "menu:orders"],
+        });
       } else {
         const resText = res.error === "stock_changed"
           ? `No pude confirmar el pedido porque cambió el stock. Disponibilidad actual: ${res.available}; solicitadas: ${res.requested}.`
+          : res.error === "active_order_limit"
+            ? `Ya tienes ${res.limit} pedidos activos. Completa o cancela uno antes de confirmar otro.`
           : res.error === "tenant_limit_exceeded"
             ? `No pude confirmar el pedido: el máximo permitido es ${res.limit} unidades por producto.`
             : res.error === "invalid_cart"

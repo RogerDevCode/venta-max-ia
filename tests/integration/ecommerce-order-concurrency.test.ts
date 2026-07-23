@@ -1,9 +1,16 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
-import { addProductToCart, confirmarPedido } from "@/server/ecommerce/service";
+import {
+  ACTIVE_ORDER_STATUSES,
+  addProductToCart,
+  cancelActiveOrder,
+  clearActiveCart,
+  confirmarPedido,
+  editOrderAsCart,
+} from "@/server/ecommerce/service";
 import { saveCommerceSettings } from "@/server/ecommerce/settings";
 
 for (const line of readFileSync(".env", "utf8").split(/\r?\n/)) {
@@ -18,7 +25,8 @@ const organizationId = newId("organization");
 const categoryId = newId("category");
 const limitProductId = newId("product");
 const raceProductId = newId("product");
-const conversationIds = Array.from({ length: 5 }, () => newId("conversation"));
+const lifecycleProductId = newId("product");
+const conversationIds = Array.from({ length: 6 }, () => newId("conversation"));
 
 describe.sequential("ecommerce cart and stock concurrency", () => {
   beforeAll(async () => {
@@ -32,6 +40,7 @@ describe.sequential("ecommerce cart and stock concurrency", () => {
     await db.insert(schema.product).values([
       { id: limitProductId, organizationId, categoryId, name: "Agua", description: "1 litro", price: 1000, stock: 5 },
       { id: raceProductId, organizationId, categoryId, name: "Cerveza", description: "500 ml", price: 2000, stock: 5 },
+      { id: lifecycleProductId, organizationId, categoryId, name: "Jugo", description: "1 litro", price: 1500, stock: 100 },
     ]);
   });
 
@@ -86,5 +95,49 @@ describe.sequential("ecommerce cart and stock concurrency", () => {
     const product = await db.select({ stock: schema.product.stock }).from(schema.product)
       .where(and(eq(schema.product.organizationId, organizationId), eq(schema.product.id, raceProductId))).limit(1);
     expect(product[0]?.stock).toBe(1);
+  });
+
+  it("limita a tres pedidos activos y edita o cancela exactamente una vez", async () => {
+    const conversationId = conversationIds[5]!;
+    for (let index = 0; index < 3; index += 1) {
+      await expect(addProductToCart({ organizationId, conversationId, productId: lifecycleProductId, quantity: 1 }))
+        .resolves.toMatchObject({ ok: true });
+      await expect(confirmarPedido({ organizationId, conversationId })).resolves.toMatchObject({ ok: true });
+    }
+    await addProductToCart({ organizationId, conversationId, productId: lifecycleProductId, quantity: 1 });
+    await expect(confirmarPedido({ organizationId, conversationId }))
+      .resolves.toEqual({ ok: false, error: "active_order_limit", limit: 3 });
+
+    const conversation = await db.select({ contactId: schema.conversation.contactId }).from(schema.conversation)
+      .where(and(eq(schema.conversation.organizationId, organizationId), eq(schema.conversation.id, conversationId))).limit(1);
+    const activeOrders = await db.select().from(schema.order).where(and(
+      eq(schema.order.organizationId, organizationId),
+      eq(schema.order.contactId, conversation[0]!.contactId),
+      inArray(schema.order.status, ACTIVE_ORDER_STATUSES)
+    ));
+    expect(activeOrders).toHaveLength(3);
+
+    await clearActiveCart({ organizationId, conversationId });
+    const editResults = await Promise.all([
+      editOrderAsCart({ organizationId, conversationId, orderId: activeOrders[0]!.id }),
+      editOrderAsCart({ organizationId, conversationId, orderId: activeOrders[0]!.id }),
+    ]);
+    expect(editResults.filter((result) => result.ok)).toHaveLength(1);
+    const reopened = await db.select().from(schema.cart).where(and(
+      eq(schema.cart.organizationId, organizationId),
+      eq(schema.cart.conversationId, conversationId),
+      eq(schema.cart.status, "active")
+    ));
+    expect(reopened).toHaveLength(1);
+    expect(reopened[0]?.reopenedFromOrderId).toBe(activeOrders[0]!.id);
+
+    const cancelResults = await Promise.all([
+      cancelActiveOrder({ organizationId, conversationId, orderId: activeOrders[1]!.id }),
+      cancelActiveOrder({ organizationId, conversationId, orderId: activeOrders[1]!.id }),
+    ]);
+    expect(cancelResults.filter((result) => result.ok)).toHaveLength(1);
+    const product = await db.select({ stock: schema.product.stock }).from(schema.product)
+      .where(and(eq(schema.product.organizationId, organizationId), eq(schema.product.id, lifecycleProductId))).limit(1);
+    expect(product[0]?.stock).toBe(99);
   });
 });

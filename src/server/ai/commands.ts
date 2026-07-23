@@ -1,12 +1,26 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { publish } from "@/server/events/bus";
 import { sendText } from "@/server/inbox/send";
 import { applyHandoff } from "@/server/ai/pipeline";
-import { addProductToCart, buscarProductos, getProductForCustomer, listarCategorias, listCatalogProducts } from "@/server/ecommerce/service";
+import {
+  ACTIVE_ORDER_STATUSES,
+  addProductToCart,
+  buscarProductos,
+  cancelActiveOrder,
+  clearActiveCart,
+  confirmarPedido,
+  editOrderAsCart,
+  getOrderForCustomer,
+  getProductForCustomer,
+  listarCategorias,
+  listActiveOrders,
+  listCatalogProducts,
+} from "@/server/ecommerce/service";
 import { preloadCatalogCache } from "@/server/ecommerce/cache";
 import { customerProductLabel, parsePositiveInteger } from "@/server/ecommerce/quantity";
+import { enterMenuState, resolveMenuInput, type MenuStateMetadata } from "@/server/ai/menu-fsm";
 
 export type SlashCommandType =
   | "start"
@@ -19,11 +33,19 @@ export type SlashCommandType =
   | "menu:carrito"
   | "menu:pedidos"
   | "menu:humano"
+  | "nav:back"
+  | "nav:home"
   | "catalog:return"
   | "catalog:home"
   | `catalog:category:${string}`
   | `catalog:product:${string}`
-  | `catalog:number:${string}`;
+  | `catalog:number:${string}`
+  | "cart:checkout"
+  | "cart:clear"
+  | `order:detail:${string}`
+  | `order:refresh:${string}`
+  | `order:edit:${string}`
+  | `order:cancel:${string}`;
 
 /** Parsea un texto entrante o payload de botón callback para detectar comandos y menús. */
 export function parseSlashCommand(text?: string | null): SlashCommandType | null {
@@ -31,11 +53,19 @@ export function parseSlashCommand(text?: string | null): SlashCommandType | null
   const clean = text.trim();
 
   // 1. Manejo de Callback Payload exacto del menú
-  if (clean.startsWith("menu:") || clean.startsWith("catalog:category:") || clean.startsWith("catalog:product:")) {
+  if (
+    clean.startsWith("menu:") ||
+    clean.startsWith("nav:") ||
+    clean.startsWith("catalog:category:") ||
+    clean.startsWith("catalog:product:") ||
+    clean.startsWith("cart:") ||
+    clean.startsWith("order:")
+  ) {
     return clean as SlashCommandType;
   }
-  if (clean === "r" || clean === "R" || clean === "catalog:return") return "catalog:return";
-  if (clean === "i" || clean === "I" || clean === "catalog:home") return "catalog:home";
+  if (clean === "r" || clean === "R" || clean === "catalog:return") return "nav:back";
+  if (clean === "i" || clean === "I" || clean === "catalog:home") return "nav:home";
+  if (clean.toLowerCase() === "confirmar") return "cart:checkout";
 
   // 2. Manejo de Comandos Slash clásicos (/start, /menu, /reset, /humano)
   if (clean.startsWith("/")) {
@@ -83,6 +113,7 @@ export async function processSlashCommand(input: {
   conversation: Conversation;
   lastInboundWaId?: string | null;
   profile?: typeof schema.agentProfile.$inferSelect | null;
+  navigationStack?: string[];
 }): Promise<{ handled: boolean }> {
   const { command, conversation, lastInboundWaId } = input;
   const { organizationId, id: conversationId } = conversation;
@@ -92,7 +123,12 @@ export async function processSlashCommand(input: {
   // Precarga asíncrona no bloqueante del catálogo y stock en paralelo mientras se muestra el menú/comando
   void preloadCatalogCache(organizationId).catch(() => {});
 
-  const currentState = (conversation.stateMetadata as Record<string, unknown>) ?? {};
+  const currentState = ((conversation.stateMetadata as MenuStateMetadata) ?? {});
+  const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
+  const navigationRow = [
+    { text: "⌂ Inicio", callback_data: "nav:home" },
+    { text: "↩ Retornar", callback_data: "nav:back" },
+  ];
 
   async function updateState(newState: Record<string, unknown>) {
     const nextState = { ...currentState, ...newState };
@@ -118,23 +154,78 @@ export async function processSlashCommand(input: {
     });
   }
 
-  async function showCategories() {
+  async function showMainMenu() {
+    await updateState(enterMenuState(currentState, {
+      currentState: "menu:main",
+      activeStep: "main_menu",
+      scope: "menu:main",
+      numericOptions: [
+        "menu:categorias",
+        "menu:promociones",
+        "menu:mas_vendidos",
+        "menu:carrito",
+        "menu:pedidos",
+        "menu:humano",
+      ],
+    }));
+    await deliverCommandReply(
+      conversation,
+      "📌 *Menú Principal — VentaMaxIA*\nSelecciona una opción:",
+      { replyMarkup: isTelegram ? buildMainMenuMarkup() : undefined, channel }
+    );
+  }
+
+  async function showCategories(stack?: string[]) {
     const categorias = await listarCategorias(organizationId);
     await updateState({
-      current_state: "menu:catalog",
-      active_step: "viewing_catalog",
+      ...enterMenuState(currentState, {
+        currentState: "menu:catalog",
+        activeStep: "viewing_catalog",
+        scope: "menu:catalog",
+        numericOptions: categorias.map((category) => `catalog:category:${category.id}`),
+        stack,
+      }),
       catalogCategoryIds: categorias.map((c) => c.id),
       catalogCategoryId: null,
       catalogProductIds: null,
     });
     const text = `📁 *Categorías de Productos*:\n${categorias.map((c, index) => `${index + 1}. *${c.name}*${c.description ? `: ${c.description}` : ""}`).join("\n")}\n\nElige una categoría con su botón o número.`;
-    const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
     const rows = categorias.map((c, index) => [{ text: `${index + 1}. ${c.name}`, callback_data: `catalog:category:${c.id}` }]);
-    rows.push([
-      { text: "↩ Retornar", callback_data: "catalog:return" },
-      { text: "⌂ Inicio", callback_data: "catalog:home" },
-    ]);
-    await deliverCommandReply(conversation, `${text}\n\nR. Retornar · I. Inicio`, {
+    rows.push(navigationRow);
+    await deliverCommandReply(conversation, `${text}\n\nI. Inicio · R. Retornar`, {
+      replyMarkup: isTelegram ? { inline_keyboard: rows } : undefined,
+      channel,
+    });
+  }
+
+  async function showProductMenu(input: {
+    title: string;
+    emptyText: string;
+    products: Awaited<ReturnType<typeof buscarProductos>>;
+    currentState: "menu:promos" | "menu:recommended";
+    activeStep: "viewing_promos" | "viewing_recommended";
+    scope: "menu:promos" | "menu:recommended";
+    stack?: string[];
+  }) {
+    const options = input.products.map((product) => `catalog:product:${product.id}`);
+    await updateState(enterMenuState(currentState, {
+      currentState: input.currentState,
+      activeStep: input.activeStep,
+      scope: input.scope,
+      numericOptions: options,
+      stack: input.stack,
+    }));
+    const text = input.products.length > 0
+      ? `${input.title}\n${input.products.map((product, index) =>
+          `${index + 1}. ${customerProductLabel(product)} — $${product.price.toLocaleString("es-CL")} CLP`
+        ).join("\n")}\n\nSelecciona un producto.`
+      : input.emptyText;
+    const rows = input.products.map((product, index) => [{
+      text: `${index + 1}. ${customerProductLabel(product)}`,
+      callback_data: `catalog:product:${product.id}`,
+    }]);
+    rows.push(navigationRow);
+    await deliverCommandReply(conversation, `${text}\n\nI. Inicio · R. Retornar`, {
       replyMarkup: isTelegram ? { inline_keyboard: rows } : undefined,
       channel,
     });
@@ -149,8 +240,12 @@ export async function processSlashCommand(input: {
       return { handled: true };
     }
     await updateState({
-      current_state: "cart:awaiting_quantity",
-      active_step: "awaiting_product_quantity",
+      ...enterMenuState(currentState, {
+        currentState: "cart:awaiting_quantity",
+        activeStep: "awaiting_product_quantity",
+        scope: `cart:quantity:${product.id}`,
+        numericOptions: [],
+      }),
       selectedProductId: product.id,
       catalogCategoryId: product.categoryId,
     });
@@ -162,78 +257,192 @@ export async function processSlashCommand(input: {
     return { handled: true };
   }
 
-  if (command === "catalog:return") {
-    if (currentState.active_step === "viewing_catalog") {
-      return processSlashCommand({ ...input, command: "catalog:home" });
+  async function navigateTo(scope: string, stack?: string[]): Promise<{ handled: boolean }> {
+    if (scope === "menu:main") {
+      await showMainMenu();
+      return { handled: true };
     }
-    await showCategories();
+    if (scope === "menu:catalog") {
+      await showCategories(stack);
+      return { handled: true };
+    }
+    if (scope === "menu:promos") {
+      return processSlashCommand({ ...input, command: "menu:promociones", navigationStack: stack });
+    }
+    if (scope === "menu:recommended") {
+      return processSlashCommand({ ...input, command: "menu:mas_vendidos", navigationStack: stack });
+    }
+    if (scope === "menu:cart") {
+      return processSlashCommand({ ...input, command: "menu:carrito", navigationStack: stack });
+    }
+    if (scope === "menu:orders") {
+      return processSlashCommand({ ...input, command: "menu:pedidos", navigationStack: stack });
+    }
+    if (scope.startsWith("catalog:category:")) {
+      return processSlashCommand({ ...input, command: scope as `catalog:category:${string}`, navigationStack: stack });
+    }
+    if (scope.startsWith("order:detail:")) {
+      return processSlashCommand({ ...input, command: scope as `order:detail:${string}`, navigationStack: stack });
+    }
     return { handled: true };
   }
-  if (command === "catalog:home") {
-    await updateState({
-      current_state: "menu:main",
-      active_step: "main_menu",
-      catalogCategoryIds: null,
-      catalogCategoryId: null,
-      catalogProductIds: null,
+
+  if (command === "catalog:return" || command === "nav:back" || command === "catalog:home" || command === "nav:home") {
+    const decision = resolveMenuInput(currentState, {
+      type: command === "catalog:return" || command === "nav:back" ? "back" : "home",
     });
-    const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
-    await deliverCommandReply(conversation, "📌 *Menú Principal — VentaMaxIA*\nSelecciona una opción:", { replyMarkup: isTelegram ? buildMainMenuMarkup() : undefined, channel });
+    if (decision.kind === "navigate") return navigateTo(decision.scope, decision.stack);
     return { handled: true };
   }
   let categoryId: string | null = null;
   if (command.startsWith("catalog:category:")) categoryId = command.slice("catalog:category:".length);
   if (command.startsWith("catalog:number:")) {
     const number = Number(command.slice("catalog:number:".length));
-    const productIds = Array.isArray(currentState.catalogProductIds)
-      ? currentState.catalogProductIds.filter((id): id is string => typeof id === "string")
-      : [];
-    const categoryIds = Array.isArray(currentState.catalogCategoryIds)
-      ? currentState.catalogCategoryIds.filter((id): id is string => typeof id === "string")
-      : [];
-    if (currentState.current_state === "menu:catalog" && currentState.active_step === "viewing_category") {
-      let productId = productIds[number - 1];
-      if (!productId && productIds.length === 0 && typeof currentState.catalogCategoryId === "string") {
-        const products = await listCatalogProducts(organizationId, currentState.catalogCategoryId);
-        productId = products[number - 1]?.id;
-      }
-      if (productId) return processSlashCommand({ ...input, command: `catalog:product:${productId}` });
-      return { handled: true };
+    const decision = resolveMenuInput(currentState, { type: "number", value: number });
+    if (decision.kind === "action") {
+      return processSlashCommand({ ...input, command: decision.action as SlashCommandType });
     }
-    if (currentState.current_state === "menu:catalog" && currentState.active_step === "viewing_catalog") {
-      categoryId = categoryIds[number - 1] ?? null;
-    } else {
-      const main = ["menu:categorias", "menu:promociones", "menu:mas_vendidos", "menu:carrito", "menu:pedidos", "menu:humano"][number - 1];
-      if (main) return processSlashCommand({ ...input, command: main as SlashCommandType });
-    }
+    return { handled: true };
   }
   if (categoryId) {
     try {
       const products = await listCatalogProducts(organizationId, categoryId);
       await updateState({
-        current_state: "menu:catalog",
-        active_step: "viewing_category",
+        ...enterMenuState(currentState, {
+          currentState: "menu:catalog",
+          activeStep: "viewing_category",
+          scope: `catalog:category:${categoryId}`,
+          numericOptions: products.map((product) => `catalog:product:${product.id}`),
+          stack: input.navigationStack,
+        }),
         catalogCategoryId: categoryId,
         catalogProductIds: products.map((product) => product.id),
       });
       const text = products.length
         ? `🛍️ *Productos*:\n${products.map((p, index) => `${index + 1}. ${customerProductLabel(p)} — $${p.price.toLocaleString("es-CL")} CLP`).join("\n")}\n\nSelecciona un producto.`
         : "Esta categoría no tiene productos activos.";
-      const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
       const productRows = products.map((product, index) => [{
         text: `${index + 1}. ${customerProductLabel(product)}`,
         callback_data: `catalog:product:${product.id}`,
       }]);
-      productRows.push([
-        { text: "↩ Retornar", callback_data: "catalog:return" },
-        { text: "⌂ Inicio", callback_data: "catalog:home" },
-      ]);
-      await deliverCommandReply(conversation, `${text}\n\nR. Retornar · I. Inicio`, {
+      productRows.push(navigationRow);
+      await deliverCommandReply(conversation, `${text}\n\nI. Inicio · R. Retornar`, {
         replyMarkup: isTelegram ? { inline_keyboard: productRows } : undefined,
         channel,
       });
     } catch { await showCategories(); }
     return { handled: true };
+  }
+
+  const orderCommand = command.match(/^order:(detail|refresh|edit|cancel):(.+)$/);
+  if (orderCommand) {
+    const action = orderCommand[1];
+    const orderId = orderCommand[2]!;
+    if (action === "edit") {
+      const result = await editOrderAsCart({ organizationId, conversationId, orderId });
+      if (!result.ok) {
+        const text = result.error === "active_cart_not_empty"
+          ? "Ya tienes un carrito con artículos. Confírmalo o vacíalo antes de editar este pedido."
+          : "Este pedido ya no está activo o no puede editarse.";
+        await deliverCommandReply(conversation, text, { channel });
+        return { handled: true };
+      }
+      await deliverCommandReply(
+        conversation,
+        `✏️ El pedido N° ${result.order.orderNumber} ahora es un carrito editable. Puedes agregar más productos.`,
+        { channel }
+      );
+      await showCategories(["menu:main"]);
+      return { handled: true };
+    }
+    if (action === "cancel") {
+      const result = await cancelActiveOrder({ organizationId, conversationId, orderId });
+      await deliverCommandReply(
+        conversation,
+        result.ok
+          ? `✅ El pedido N° ${result.order.orderNumber} fue cancelado y sus unidades volvieron al stock.`
+          : "Este pedido ya no está activo o no puede cancelarse.",
+        { channel }
+      );
+      return processSlashCommand({
+        ...input,
+        command: "menu:pedidos",
+        navigationStack: ["menu:main"],
+      });
+    }
+
+    const order = await getOrderForCustomer({ organizationId, contactId: conversation.contactId, orderId });
+    if (!order) {
+      await deliverCommandReply(conversation, "No encontré ese pedido.", { channel });
+      return processSlashCommand({ ...input, command: "menu:pedidos", navigationStack: ["menu:main"] });
+    }
+    const isActive = ACTIVE_ORDER_STATUSES.includes(order.status);
+    const numericOptions = isActive
+      ? [`order:refresh:${order.id}`, `order:edit:${order.id}`, `order:cancel:${order.id}`]
+      : [`order:refresh:${order.id}`];
+    await updateState(enterMenuState(currentState, {
+      currentState: "menu:order_detail",
+      activeStep: "viewing_order_detail",
+      scope: `order:detail:${order.id}`,
+      numericOptions,
+      stack: input.navigationStack,
+    }));
+    const items = order.items as Array<{
+      name: string;
+      presentation: string | null;
+      quantity: number;
+      unitPrice: number;
+    }>;
+    const detail = items.map((item) =>
+      `• ${[item.name, item.presentation].filter(Boolean).join(" — ")} x${item.quantity}: $${(item.quantity * item.unitPrice).toLocaleString("es-CL")} CLP`
+    ).join("\n");
+    const optionsText = isActive
+      ? "1. Ver estado actualizado\n2. Editar pedido\n3. Cancelar pedido"
+      : "1. Ver estado actualizado";
+    const rows = isActive
+      ? [
+          [{ text: "1. 🔄 Ver estado actualizado", callback_data: `order:refresh:${order.id}` }],
+          [{ text: "2. ✏️ Editar pedido", callback_data: `order:edit:${order.id}` }],
+          [{ text: "3. ❌ Cancelar pedido", callback_data: `order:cancel:${order.id}` }],
+          navigationRow,
+        ]
+      : [
+          [{ text: "1. 🔄 Ver estado actualizado", callback_data: `order:refresh:${order.id}` }],
+          navigationRow,
+        ];
+    await deliverCommandReply(
+      conversation,
+      `📋 *Pedido N° ${order.orderNumber}*\nEstado: ${order.status}\n\n${detail}\n\n*Total:* $${order.totalAmount.toLocaleString("es-CL")} CLP\n\n${optionsText}\n\nI. Inicio · R. Retornar`,
+      { replyMarkup: isTelegram ? { inline_keyboard: rows } : undefined, channel }
+    );
+    return { handled: true };
+  }
+
+  if (command === "cart:clear") {
+    await clearActiveCart({ organizationId, conversationId });
+    await deliverCommandReply(conversation, "🗑️ Tu carrito quedó vacío.", { channel });
+    return processSlashCommand({ ...input, command: "menu:carrito" });
+  }
+
+  if (command === "cart:checkout") {
+    const result = await confirmarPedido({ organizationId, conversationId });
+    if (!result.ok) {
+      const text = result.error === "active_order_limit"
+        ? `Ya tienes ${result.limit} pedidos activos. Completa o cancela uno antes de confirmar otro.`
+        : result.error === "stock_changed"
+          ? `Cambió el stock. Disponibilidad actual: ${result.available}; solicitadas: ${result.requested}.`
+          : result.error === "tenant_limit_exceeded"
+            ? `El máximo permitido es ${result.limit} unidades por producto.`
+            : "No pudimos confirmar el pedido porque el carrito está vacío o contiene datos inválidos.";
+      await deliverCommandReply(conversation, text, { channel });
+      return { handled: true };
+    }
+    await deliverCommandReply(conversation, `✅ Pedido confirmado. Número: ${result.order.orderNumber}.`, { channel });
+    return processSlashCommand({
+      ...input,
+      command: `order:detail:${result.order.id}`,
+      navigationStack: ["menu:main", "menu:orders"],
+    });
   }
 
   switch (command) {
@@ -242,7 +451,15 @@ export async function processSlashCommand(input: {
       await db
         .update(schema.conversation)
         .set({
-          stateMetadata: { current_state: "menu:main", active_step: "main_menu" },
+          stateMetadata: enterMenuState({}, {
+            currentState: "menu:main",
+            activeStep: "main_menu",
+            scope: "menu:main",
+            numericOptions: [
+              "menu:categorias", "menu:promociones", "menu:mas_vendidos",
+              "menu:carrito", "menu:pedidos", "menu:humano",
+            ],
+          }),
           handoffAt: null,
           handoffReason: null,
           updatedAt: new Date(),
@@ -283,53 +500,44 @@ export async function processSlashCommand(input: {
     }
 
     case "menu": {
-      await updateState({ current_state: "menu:main", active_step: "main_menu" });
-      const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
-      const menuTitle = "📌 *Menú Principal — VentaMaxIA*\nSelecciona una opción:";
-
-      if (isTelegram) {
-        await deliverCommandReply(conversation, menuTitle, { replyMarkup: buildMainMenuMarkup() });
-      } else {
-        const textMenu =
-          `${menuTitle}\n\n` +
-          `1. 🛍️ Ver Catálogo\n` +
-          `2. ⚡ Promos del Día\n` +
-          `3. ⭐ Recomendados\n` +
-          `4. 🛒 Mi Carrito (Pagar)\n` +
-          `5. 📋 Mis Pedidos\n` +
-          `6. 👤 Hablar con Humano`;
-        await deliverCommandReply(conversation, textMenu);
-      }
+      await showMainMenu();
       return { handled: true };
     }
 
     case "menu:categorias": {
-      await showCategories();
+      await showCategories(input.navigationStack);
       return { handled: true };
     }
 
     case "menu:promociones": {
-      await updateState({ current_state: "menu:promos", active_step: "viewing_promos" });
       const productos = await buscarProductos({ organizationId, query: "promo" });
-      const text = productos.length > 0
-        ? `⚡ *Promociones del Día*:\n` + productos.map((p) => `• ${customerProductLabel(p)}: $${p.price.toLocaleString("es-CL")} CLP`).join("\n")
-        : `Por el momento no hay promociones activas registradas.`;
-      await deliverCommandReply(conversation, text);
+      await showProductMenu({
+        title: "⚡ *Promociones del Día*:",
+        emptyText: "Por el momento no hay promociones activas registradas.",
+        products: productos,
+        currentState: "menu:promos",
+        activeStep: "viewing_promos",
+        scope: "menu:promos",
+        stack: input.navigationStack,
+      });
       return { handled: true };
     }
 
     case "menu:mas_vendidos": {
-      await updateState({ current_state: "menu:recommended", active_step: "viewing_recommended" });
       const productos = await buscarProductos({ organizationId, query: "*" });
-      const text = productos.length > 0
-        ? `⭐ *Productos Mas Vendidos / Recomendados*:\n` + productos.map((p) => `• ${customerProductLabel(p)}: $${p.price.toLocaleString("es-CL")} CLP`).join("\n")
-        : `No hay productos recomendados configurados.`;
-      await deliverCommandReply(conversation, text);
+      await showProductMenu({
+        title: "⭐ *Productos Más Vendidos / Recomendados*:",
+        emptyText: "No hay productos recomendados configurados.",
+        products: productos,
+        currentState: "menu:recommended",
+        activeStep: "viewing_recommended",
+        scope: "menu:recommended",
+        stack: input.navigationStack,
+      });
       return { handled: true };
     }
 
     case "menu:carrito": {
-      await updateState({ current_state: "menu:cart", active_step: "viewing_cart" });
       const cartRows = await db
         .select()
         .from(schema.cart)
@@ -344,44 +552,83 @@ export async function processSlashCommand(input: {
 
       const cart = cartRows[0];
       const items = (cart?.items as Array<{ name: string; quantity: number; unitPrice: number }>) ?? [];
+      const numericOptions = items.length > 0
+        ? ["cart:checkout", "menu:categorias", "cart:clear"]
+        : ["menu:categorias"];
+      await updateState(enterMenuState(currentState, {
+        currentState: "menu:cart",
+        activeStep: "viewing_cart",
+        scope: "menu:cart",
+        numericOptions,
+        stack: input.navigationStack,
+      }));
       if (items.length === 0) {
-        await deliverCommandReply(conversation, "🛒 Tu carrito de compras está vacío actualmente.");
+        const rows = [
+          [{ text: "1. 🛍️ Seguir comprando", callback_data: "menu:categorias" }],
+          navigationRow,
+        ];
+        await deliverCommandReply(conversation, "🛒 Tu carrito de compras está vacío actualmente.\n\n1. Seguir comprando\n\nI. Inicio · R. Retornar", {
+          replyMarkup: isTelegram ? { inline_keyboard: rows } : undefined,
+          channel,
+        });
       } else {
         const total = items.reduce((acc, i) => acc + i.quantity * i.unitPrice, 0);
         const text =
           `🛒 *Tu Carrito Actual*:\n` +
           items.map((i) => `• ${i.name} x${i.quantity}: $${(i.quantity * i.unitPrice).toLocaleString("es-CL")} CLP`).join("\n") +
-          `\n\n*Total:* $${total.toLocaleString("es-CL")} CLP\n\nPara confirmar tu compra responde con la palabra "confirmar".`;
-        await deliverCommandReply(conversation, text);
+          `\n\n*Total:* $${total.toLocaleString("es-CL")} CLP\n\n` +
+          `1. Confirmar compra\n2. Seguir comprando\n3. Vaciar carrito\n\nI. Inicio · R. Retornar`;
+        const rows = [
+          [{ text: "1. ✅ Confirmar compra", callback_data: "cart:checkout" }],
+          [{ text: "2. 🛍️ Seguir comprando", callback_data: "menu:categorias" }],
+          [{ text: "3. 🗑️ Vaciar carrito", callback_data: "cart:clear" }],
+          navigationRow,
+        ];
+        await deliverCommandReply(conversation, text, {
+          replyMarkup: isTelegram ? { inline_keyboard: rows } : undefined,
+          channel,
+        });
       }
       return { handled: true };
     }
 
     case "menu:pedidos": {
-      await updateState({ current_state: "menu:orders", active_step: "viewing_orders" });
-      const orderRows = await db
-        .select()
-        .from(schema.order)
-        .where(
-          scoped(
-            schema.order.organizationId,
-            organizationId,
-            eq(schema.order.conversationId, conversationId)
-          )
-        )
-        .orderBy(desc(schema.order.createdAt))
-        .limit(3);
-
+      const orderRows = await listActiveOrders({ organizationId, contactId: conversation.contactId });
+      const orderState = enterMenuState(currentState, {
+        currentState: "menu:orders",
+        activeStep: "viewing_orders",
+        scope: "menu:orders",
+        numericOptions: orderRows.map((order) => `order:detail:${order.id}`),
+        stack: input.navigationStack,
+      });
+      await updateState(orderState);
       if (orderRows.length === 0) {
-        await deliverCommandReply(conversation, "📋 No tienes pedidos registrados aún.");
-      } else {
-        const text =
-          `📋 *Tus Últimos Pedidos*:\n` +
-          orderRows
-            .map((o) => `• N° ${o.orderNumber}: $${o.totalAmount.toLocaleString("es-CL")} CLP (Estado: ${o.status})`)
-            .join("\n");
-        await deliverCommandReply(conversation, text);
+        await deliverCommandReply(conversation, "📋 No tienes pedidos activos.\n\nI. Inicio · R. Retornar", {
+          replyMarkup: isTelegram ? { inline_keyboard: [navigationRow] } : undefined,
+          channel,
+        });
+        return { handled: true };
       }
+      if (orderRows.length === 1) {
+        return processSlashCommand({
+          ...input,
+          command: `order:detail:${orderRows[0]!.id}`,
+          conversation: { ...conversation, stateMetadata: orderState },
+          navigationStack: orderState.menu_stack as string[],
+        });
+      }
+      const rows = orderRows.map((order, index) => [{
+        text: `${index + 1}. Pedido N° ${order.orderNumber}`,
+        callback_data: `order:detail:${order.id}`,
+      }]);
+      rows.push(navigationRow);
+      const text = `📋 *Tus Pedidos Activos*:\n${orderRows.map((order, index) =>
+        `${index + 1}. N° ${order.orderNumber} — $${order.totalAmount.toLocaleString("es-CL")} CLP — ${order.status}`
+      ).join("\n")}\n\nSelecciona un pedido.\n\nI. Inicio · R. Retornar`;
+      await deliverCommandReply(conversation, text, {
+        replyMarkup: isTelegram ? { inline_keyboard: rows } : undefined,
+        channel,
+      });
       return { handled: true };
     }
 
@@ -441,15 +688,29 @@ export async function processPendingProductQuantity(input: {
     if (result.error === "product_not_found") {
       const { selectedProductId: _selected, ...cleanState } = state;
       await getDb().update(schema.conversation).set({
-        stateMetadata: { ...cleanState, current_state: "menu:catalog", active_step: "viewing_catalog" },
+        stateMetadata: enterMenuState(cleanState, {
+          currentState: "menu:catalog",
+          activeStep: "viewing_catalog",
+          scope: "menu:catalog",
+          numericOptions: [],
+        }),
         updatedAt: new Date(),
       }).where(and(scoped(schema.conversation.organizationId, organizationId), eq(schema.conversation.id, input.conversation.id)));
     }
     return true;
   }
   const { selectedProductId: _selected, ...cleanState } = state;
+  const previousStack = Array.isArray(cleanState.menu_stack)
+    ? cleanState.menu_stack.filter((entry): entry is string => typeof entry === "string").slice(0, -1)
+    : ["menu:main"];
+  const cartState = enterMenuState({ ...cleanState, menu_stack: previousStack }, {
+    currentState: "menu:cart",
+    activeStep: "viewing_cart",
+    scope: "menu:cart",
+    numericOptions: ["cart:checkout", "menu:categorias", "cart:clear"],
+  });
   await getDb().update(schema.conversation).set({
-    stateMetadata: { ...cleanState, current_state: "menu:cart", active_step: "viewing_cart" },
+    stateMetadata: cartState,
     updatedAt: new Date(),
   }).where(and(scoped(schema.conversation.organizationId, organizationId), eq(schema.conversation.id, input.conversation.id)));
   await deliverCommandReply(
@@ -457,6 +718,12 @@ export async function processPendingProductQuantity(input: {
     `✅ Agregamos ${customerProductLabel(result.product)}, cantidad ${quantity}, a tu carrito.\n\n🛒 Carrito: ${result.units} productos · Total: $${result.totalAmount.toLocaleString("es-CL")} CLP`,
     { channel }
   );
+  await processSlashCommand({
+    command: "menu:carrito",
+    conversation: { ...input.conversation, stateMetadata: cartState },
+    lastInboundWaId: input.lastInboundWaId,
+    navigationStack: cartState.menu_stack,
+  });
   return true;
 }
 

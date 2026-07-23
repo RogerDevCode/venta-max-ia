@@ -1,4 +1,4 @@
-import { and, eq, gte, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -6,6 +6,7 @@ import { listCatalogProducts, listCategories } from "@/server/ecommerce/catalog"
 import {
   commitMemoryOrderStock,
   getCatalogCacheMap,
+  invalidateCatalogCache,
 } from "@/server/ecommerce/cache";
 import { getCommerceSettings } from "@/server/ecommerce/settings";
 
@@ -22,6 +23,10 @@ type LegacyCartItem = Omit<CartItem, "productId" | "presentation"> & {
   sku?: string;
   presentation?: string | null;
 };
+
+type OrderStatus = typeof schema.order.$inferSelect.status;
+export const ACTIVE_ORDER_STATUSES: OrderStatus[] = ["pending", "confirmed", "processing"];
+export const MAX_ACTIVE_ORDERS_PER_CONTACT = 3;
 
 /**
  * Obtiene las categorías registradas en la organización.
@@ -179,6 +184,23 @@ export async function agregarAlCarrito(input: {
   return addProductToCart({ ...input, quantity: input.cantidad ?? 1 });
 }
 
+export async function clearActiveCart(input: {
+  organizationId: string;
+  conversationId: string;
+}) {
+  const db = getDb();
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select ${schema.conversation.id} from ${schema.conversation}
+      where ${schema.conversation.organizationId} = ${input.organizationId}
+        and ${schema.conversation.id} = ${input.conversationId} for update`);
+    const cleared = await tx.update(schema.cart).set({ items: [], updatedAt: new Date() })
+      .where(scoped(schema.cart.organizationId, input.organizationId,
+        and(eq(schema.cart.conversationId, input.conversationId), eq(schema.cart.status, "active"))))
+      .returning({ id: schema.cart.id });
+    return { ok: true as const, cleared: cleared.length > 0 };
+  });
+}
+
 /**
  * Formaliza el carrito activo y lo convierte en un pedido en firme.
  */
@@ -195,6 +217,22 @@ export async function confirmarPedido(input: {
       await tx.execute(sql`select ${schema.conversation.id} from ${schema.conversation}
         where ${schema.conversation.organizationId} = ${organizationId}
           and ${schema.conversation.id} = ${conversationId} for update`);
+      const conversations = await tx.select({ contactId: schema.conversation.contactId })
+        .from(schema.conversation)
+        .where(scoped(schema.conversation.organizationId, organizationId, eq(schema.conversation.id, conversationId)))
+        .limit(1);
+      const contactId = conversations[0]?.contactId;
+      if (!contactId) return { ok: false as const, error: "conversation_not_found" as const };
+      await tx.execute(sql`select ${schema.contact.id} from ${schema.contact}
+        where ${schema.contact.organizationId} = ${organizationId}
+          and ${schema.contact.id} = ${contactId} for update`);
+      const activeOrderCount = await tx.select({ count: sql<number>`count(*)::int` })
+        .from(schema.order)
+        .where(scoped(schema.order.organizationId, organizationId,
+          and(eq(schema.order.contactId, contactId), inArray(schema.order.status, ACTIVE_ORDER_STATUSES))));
+      if ((activeOrderCount[0]?.count ?? 0) >= MAX_ACTIVE_ORDERS_PER_CONTACT) {
+        return { ok: false as const, error: "active_order_limit" as const, limit: MAX_ACTIVE_ORDERS_PER_CONTACT };
+      }
       const carts = await tx.select().from(schema.cart).where(scoped(
         schema.cart.organizationId, organizationId,
         and(eq(schema.cart.conversationId, conversationId), eq(schema.cart.status, "active"))
@@ -240,7 +278,7 @@ export async function confirmarPedido(input: {
         throw new InvalidCartError();
       }
       const orders = await tx.insert(schema.order).values({
-        id: newId("order"), organizationId, conversationId, cartId: cart.id,
+        id: newId("order"), organizationId, conversationId, contactId, cartId: cart.id,
         orderNumber, items: resolved, totalAmount, status: "confirmed",
       }).returning();
       if (!orders[0]) throw new Error("No se pudo crear el pedido");
@@ -260,6 +298,191 @@ export async function confirmarPedido(input: {
       return { ok: false as const, error: "tenant_limit_exceeded" as const, limit: error.limit };
     }
     if (error instanceof InvalidCartError) return { ok: false as const, error: "invalid_cart" as const };
+    throw error;
+  }
+}
+
+export async function listActiveOrders(input: {
+  organizationId: string;
+  contactId: string;
+}) {
+  return getDb().select().from(schema.order).where(scoped(
+    schema.order.organizationId,
+    input.organizationId,
+    and(
+      eq(schema.order.contactId, input.contactId),
+      inArray(schema.order.status, ACTIVE_ORDER_STATUSES)
+    )
+  )).orderBy(desc(schema.order.createdAt)).limit(MAX_ACTIVE_ORDERS_PER_CONTACT);
+}
+
+export async function getOrderForCustomer(input: {
+  organizationId: string;
+  contactId: string;
+  orderId: string;
+}) {
+  const rows = await getDb().select().from(schema.order).where(scoped(
+    schema.order.organizationId,
+    input.organizationId,
+    and(eq(schema.order.contactId, input.contactId), eq(schema.order.id, input.orderId))
+  )).limit(1);
+  return rows[0] ?? null;
+}
+
+async function restoreOrderStock(
+  tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
+  organizationId: string,
+  items: CartItem[]
+): Promise<void> {
+  const sorted = [...items].sort((left, right) => left.productId.localeCompare(right.productId));
+  for (const item of sorted) {
+    if (!item.productId || !Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
+      throw new InvalidCartError();
+    }
+    await tx.execute(sql`select ${schema.product.id} from ${schema.product}
+      where ${schema.product.organizationId} = ${organizationId}
+        and ${schema.product.id} = ${item.productId} for update`);
+    const restored = await tx.update(schema.product).set({
+      stock: sql`${schema.product.stock} + ${item.quantity}`,
+      updatedAt: new Date(),
+    }).where(scoped(schema.product.organizationId, organizationId, eq(schema.product.id, item.productId)))
+      .returning({ id: schema.product.id });
+    if (!restored[0]) throw new Error("Order product missing while restoring stock");
+  }
+}
+
+async function lockCustomerContext(
+  tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
+  organizationId: string,
+  conversationId: string
+): Promise<string | null> {
+  await tx.execute(sql`select ${schema.conversation.id} from ${schema.conversation}
+    where ${schema.conversation.organizationId} = ${organizationId}
+      and ${schema.conversation.id} = ${conversationId} for update`);
+  const conversations = await tx.select({ contactId: schema.conversation.contactId })
+    .from(schema.conversation)
+    .where(scoped(schema.conversation.organizationId, organizationId, eq(schema.conversation.id, conversationId)))
+    .limit(1);
+  const contactId = conversations[0]?.contactId;
+  if (!contactId) return null;
+  await tx.execute(sql`select ${schema.contact.id} from ${schema.contact}
+    where ${schema.contact.organizationId} = ${organizationId}
+      and ${schema.contact.id} = ${contactId} for update`);
+  return contactId;
+}
+
+export async function editOrderAsCart(input: {
+  organizationId: string;
+  conversationId: string;
+  orderId: string;
+}) {
+  const db = getDb();
+  try {
+    const result = await db.transaction(async (tx) => {
+      const contactId = await lockCustomerContext(tx, input.organizationId, input.conversationId);
+      if (!contactId) return { ok: false as const, error: "conversation_not_found" as const };
+      await tx.execute(sql`select ${schema.order.id} from ${schema.order}
+        where ${schema.order.organizationId} = ${input.organizationId}
+          and ${schema.order.contactId} = ${contactId}
+          and ${schema.order.id} = ${input.orderId} for update`);
+      const orders = await tx.select().from(schema.order).where(scoped(
+        schema.order.organizationId,
+        input.organizationId,
+        and(
+          eq(schema.order.id, input.orderId),
+          eq(schema.order.contactId, contactId),
+          inArray(schema.order.status, ACTIVE_ORDER_STATUSES)
+        )
+      )).limit(1);
+      const order = orders[0];
+      if (!order) return { ok: false as const, error: "order_not_active" as const };
+
+      const activeCarts = await tx.select().from(schema.cart).where(scoped(
+        schema.cart.organizationId,
+        input.organizationId,
+        and(eq(schema.cart.conversationId, input.conversationId), eq(schema.cart.status, "active"))
+      ));
+      if (activeCarts.some((cart) => ((cart.items ?? []) as CartItem[]).length > 0)) {
+        return { ok: false as const, error: "active_cart_not_empty" as const };
+      }
+
+      const cancelled = await tx.update(schema.order).set({ status: "cancelled", updatedAt: new Date() })
+        .where(scoped(schema.order.organizationId, input.organizationId,
+          and(
+            eq(schema.order.id, order.id),
+            eq(schema.order.contactId, contactId),
+            inArray(schema.order.status, ACTIVE_ORDER_STATUSES)
+          )))
+        .returning({ id: schema.order.id });
+      if (!cancelled[0]) return { ok: false as const, error: "order_not_active" as const };
+
+      const items = order.items as CartItem[];
+      await restoreOrderStock(tx, input.organizationId, items);
+      if (activeCarts.length > 0) {
+        await tx.update(schema.cart).set({ status: "abandoned", updatedAt: new Date() })
+          .where(scoped(schema.cart.organizationId, input.organizationId,
+            and(eq(schema.cart.conversationId, input.conversationId), eq(schema.cart.status, "active"))));
+      }
+      const carts = await tx.insert(schema.cart).values({
+        id: newId("cart"),
+        organizationId: input.organizationId,
+        conversationId: input.conversationId,
+        reopenedFromOrderId: order.id,
+        items,
+        status: "active",
+      }).returning();
+      if (!carts[0]) throw new Error("No se pudo reabrir el pedido como carrito");
+      return { ok: true as const, order: { ...order, status: "cancelled" as const }, cart: carts[0] };
+    });
+    if (result.ok) invalidateCatalogCache(input.organizationId);
+    return result;
+  } catch (error) {
+    if (error instanceof InvalidCartError) return { ok: false as const, error: "invalid_order" as const };
+    throw error;
+  }
+}
+
+export async function cancelActiveOrder(input: {
+  organizationId: string;
+  conversationId: string;
+  orderId: string;
+}) {
+  const db = getDb();
+  try {
+    const result = await db.transaction(async (tx) => {
+      const contactId = await lockCustomerContext(tx, input.organizationId, input.conversationId);
+      if (!contactId) return { ok: false as const, error: "conversation_not_found" as const };
+      await tx.execute(sql`select ${schema.order.id} from ${schema.order}
+        where ${schema.order.organizationId} = ${input.organizationId}
+          and ${schema.order.contactId} = ${contactId}
+          and ${schema.order.id} = ${input.orderId} for update`);
+      const orders = await tx.select().from(schema.order).where(scoped(
+        schema.order.organizationId,
+        input.organizationId,
+        and(
+          eq(schema.order.id, input.orderId),
+          eq(schema.order.contactId, contactId),
+          inArray(schema.order.status, ACTIVE_ORDER_STATUSES)
+        )
+      )).limit(1);
+      const order = orders[0];
+      if (!order) return { ok: false as const, error: "order_not_active" as const };
+      const cancelled = await tx.update(schema.order).set({ status: "cancelled", updatedAt: new Date() })
+        .where(scoped(schema.order.organizationId, input.organizationId,
+          and(
+            eq(schema.order.id, order.id),
+            eq(schema.order.contactId, contactId),
+            inArray(schema.order.status, ACTIVE_ORDER_STATUSES)
+          )))
+        .returning({ id: schema.order.id });
+      if (!cancelled[0]) return { ok: false as const, error: "order_not_active" as const };
+      await restoreOrderStock(tx, input.organizationId, order.items as CartItem[]);
+      return { ok: true as const, order: { ...order, status: "cancelled" as const } };
+    });
+    if (result.ok) invalidateCatalogCache(input.organizationId);
+    return result;
+  } catch (error) {
+    if (error instanceof InvalidCartError) return { ok: false as const, error: "invalid_order" as const };
     throw error;
   }
 }

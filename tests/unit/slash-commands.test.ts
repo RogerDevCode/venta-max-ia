@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseSlashCommand, processPendingProductQuantity, processSlashCommand } from "@/server/ai/commands";
 
-const { mockUpdateSet, mockSendText, mockSchema, mockDbState, mockApplyHandoff, mockBuscarProductos, mockListarCategorias, mockListCatalogProducts, mockGetProduct, mockAddProduct } = vi.hoisted(() => {
+const { mockUpdateSet, mockSendText, mockSchema, mockDbState, mockApplyHandoff, mockBuscarProductos, mockListarCategorias, mockListCatalogProducts, mockGetProduct, mockAddProduct, mockListActiveOrders, mockGetOrder } = vi.hoisted(() => {
   const schemaObj = {
     conversation: { id: "id", lastInboundAt: "last_inbound_at", organizationId: "organization_id", stateMetadata: "state_metadata" },
     message: { conversationId: "conversation_id", createdAt: "created_at" },
@@ -18,6 +18,8 @@ const { mockUpdateSet, mockSendText, mockSchema, mockDbState, mockApplyHandoff, 
     mockListCatalogProducts: vi.fn().mockResolvedValue([]),
     mockGetProduct: vi.fn().mockResolvedValue(null),
     mockAddProduct: vi.fn(),
+    mockListActiveOrders: vi.fn().mockResolvedValue([]),
+    mockGetOrder: vi.fn().mockResolvedValue(null),
     mockSchema: schemaObj,
     mockDbState: {
       conversation: null as Record<string, unknown> | null,
@@ -43,6 +45,13 @@ vi.mock("@/server/ecommerce/service", () => ({
   listCatalogProducts: (...args: unknown[]) => mockListCatalogProducts(...args),
   getProductForCustomer: (...args: unknown[]) => mockGetProduct(...args),
   addProductToCart: (...args: unknown[]) => mockAddProduct(...args),
+  listActiveOrders: (...args: unknown[]) => mockListActiveOrders(...args),
+  getOrderForCustomer: (...args: unknown[]) => mockGetOrder(...args),
+  editOrderAsCart: vi.fn(),
+  cancelActiveOrder: vi.fn(),
+  clearActiveCart: vi.fn(),
+  confirmarPedido: vi.fn(),
+  ACTIVE_ORDER_STATUSES: ["pending", "confirmed", "processing"],
 }));
 
 vi.mock("@/server/events/bus", () => ({
@@ -95,6 +104,8 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
     };
     mockDbState.carts = [];
     mockDbState.orders = [];
+    mockListActiveOrders.mockResolvedValue([]);
+    mockGetOrder.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -114,6 +125,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       expect(parseSlashCommand("6")).toBe("catalog:number:6");
       expect(parseSlashCommand("12")).toBe("catalog:number:12");
       expect(parseSlashCommand("catalog:product:prod_1")).toBe("catalog:product:prod_1");
+      expect(parseSlashCommand("confirmar")).toBe("cart:checkout");
     });
   });
 
@@ -183,7 +195,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       expect(call.replyMarkup).toEqual({ inline_keyboard: [
         [{ text: "1. Coca-Cola — 2 litros", callback_data: "catalog:product:prod_1" }],
         [{ text: "2. Agua", callback_data: "catalog:product:prod_2" }],
-        [{ text: "↩ Retornar", callback_data: "catalog:return" }, { text: "⌂ Inicio", callback_data: "catalog:home" }],
+        [{ text: "⌂ Inicio", callback_data: "nav:home" }, { text: "↩ Retornar", callback_data: "nav:back" }],
       ] });
     });
 
@@ -210,6 +222,11 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
         catalogCategoryId: "cat_bebidas",
         catalogCategoryIds: ["cat_agua", "cat_gaseosas", "cat_cervezas"],
         catalogProductIds: ["prod_agua", "prod_coca", "prod_pepsi"],
+        numeric_options: [
+          "catalog:product:prod_agua",
+          "catalog:product:prod_coca",
+          "catalog:product:prod_pepsi",
+        ],
       };
       mockGetProduct.mockResolvedValueOnce({
         id: "prod_pepsi", categoryId: "cat_bebidas", name: "Pepsi-Cola",
@@ -229,6 +246,31 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       expect(mockListCatalogProducts).not.toHaveBeenCalledWith("org_cmd_123", "cat_cervezas");
     });
 
+    it("enumera promociones y mantiene la relación número-producto exacta", async () => {
+      mockBuscarProductos.mockResolvedValueOnce([
+        { id: "promo_coca", name: "Coca-Cola", description: "2 litros", price: 2500, stock: 5 },
+        { id: "promo_pepsi", name: "Pepsi-Cola", description: "2 litros", price: 2000, stock: 5 },
+      ]);
+      await processSlashCommand({
+        command: "menu:promociones",
+        conversation: mockDbState.conversation as never,
+        lastInboundWaId: "tg_12345",
+      });
+      expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
+        stateMetadata: expect.objectContaining({
+          current_state: "menu:promos",
+          active_step: "viewing_promos",
+          numeric_options: ["catalog:product:promo_coca", "catalog:product:promo_pepsi"],
+        }),
+      }));
+      expect(mockSendText).toHaveBeenCalledWith(expect.objectContaining({
+        text: expect.stringContaining("2. Pepsi-Cola — 2 litros"),
+        replyMarkup: expect.objectContaining({ inline_keyboard: expect.arrayContaining([
+          [expect.objectContaining({ callback_data: "catalog:product:promo_pepsi" })],
+        ]) }),
+      }));
+    });
+
     it("valida la cantidad y confirma el carrito", async () => {
       mockDbState.conversation!.stateMetadata = {
         current_state: "cart:awaiting_quantity", selectedProductId: "prod_1", catalogCategoryId: "cat_1",
@@ -242,6 +284,48 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       expect(mockAddProduct).toHaveBeenCalledWith(expect.objectContaining({ productId: "prod_1", quantity: 2 }));
       expect(mockSendText).toHaveBeenCalledWith(expect.objectContaining({
         text: expect.stringContaining("Agregamos Coca-Cola — 2 litros, cantidad 2"),
+      }));
+    });
+
+    it("abre directamente el detalle cuando existe un solo pedido activo", async () => {
+      const order = {
+        id: "ord_1", organizationId: "org_cmd_123", contactId: "cont_123",
+        conversationId: "conv_cmd_123", cartId: "cart_1", orderNumber: "ORD-100",
+        items: [{ productId: "prod_1", name: "Pepsi-Cola", presentation: "2 litros", quantity: 2, unitPrice: 2000 }],
+        totalAmount: 4000, status: "confirmed", createdAt: new Date(), updatedAt: new Date(),
+      };
+      mockListActiveOrders.mockResolvedValueOnce([order]);
+      mockGetOrder.mockResolvedValueOnce(order);
+      await processSlashCommand({
+        command: "menu:pedidos", conversation: mockDbState.conversation as never,
+        lastInboundWaId: "tg_12345",
+      });
+      expect(mockSendText).toHaveBeenCalledWith(expect.objectContaining({
+        text: expect.stringContaining("Pedido N° ORD-100"),
+        replyMarkup: { inline_keyboard: expect.arrayContaining([
+          [expect.objectContaining({ text: expect.stringContaining("Editar pedido"), callback_data: "order:edit:ord_1" })],
+        ]) },
+      }));
+    });
+
+    it("enumera varios pedidos y persiste su relación numérica exacta", async () => {
+      mockListActiveOrders.mockResolvedValueOnce([
+        { id: "ord_2", orderNumber: "ORD-200", totalAmount: 2000, status: "confirmed" },
+        { id: "ord_1", orderNumber: "ORD-100", totalAmount: 1000, status: "pending" },
+      ]);
+      await processSlashCommand({
+        command: "menu:pedidos", conversation: mockDbState.conversation as never,
+        lastInboundWaId: "tg_12345",
+      });
+      expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
+        stateMetadata: expect.objectContaining({
+          current_state: "menu:orders",
+          active_step: "viewing_orders",
+          numeric_options: ["order:detail:ord_2", "order:detail:ord_1"],
+        }),
+      }));
+      expect(mockSendText).toHaveBeenCalledWith(expect.objectContaining({
+        text: expect.stringContaining("2. N° ORD-100"),
       }));
     });
 

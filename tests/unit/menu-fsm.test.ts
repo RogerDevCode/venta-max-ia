@@ -41,6 +41,23 @@ describe("menu FSM transition table", () => {
     expect(resolveMenuInput(state, { type: "action", action: "menu:categorias" })).toEqual({ kind: "ignore" });
   });
 
+  it("rechaza la combinatoria completa de acciones pertenecientes a otros estados", () => {
+    for (const [currentState, activeStep, ownAction] of states) {
+      const state: MenuStateMetadata = {
+        current_state: currentState,
+        active_step: activeStep,
+        numeric_options: [ownAction],
+      };
+      for (const [, , foreignAction] of states) {
+        if (foreignAction === ownAction) continue;
+        expect(
+          resolveMenuInput(state, { type: "action", action: foreignAction }),
+          `${currentState}/${activeStep} aceptó ${foreignAction}`
+        ).toEqual({ kind: "ignore" });
+      }
+    }
+  });
+
   it("acepta cantidades solamente en el paso de cantidad", () => {
     const quantityState = {
       current_state: "cart:awaiting_quantity",
@@ -72,7 +89,11 @@ describe("menu FSM transition table", () => {
   });
 
   it("valida acciones de callback contra el estado exacto", () => {
-    const state = { current_state: "menu:orders", active_step: "viewing_orders" };
+    const state = {
+      current_state: "menu:orders",
+      active_step: "viewing_orders",
+      numeric_options: ["order:detail:ord_1"],
+    };
     expect(resolveMenuInput(state, { type: "action", action: "order:detail:ord_1" }))
       .toEqual({ kind: "action", action: "order:detail:ord_1" });
     expect(resolveMenuInput(state, { type: "action", action: "catalog:product:prod_1" }))

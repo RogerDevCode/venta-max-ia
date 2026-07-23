@@ -558,6 +558,7 @@ export const cart = pgTable(
     conversationId: text("conversation_id")
       .notNull()
       .references(() => conversation.id, { onDelete: "cascade" }),
+    reopenedFromOrderId: text("reopened_from_order_id"),
     items: jsonb("items")
       .$type<{ productId: string; quantity: number; unitPrice: number; name: string; presentation: string | null }[]>()
       .notNull()
@@ -587,6 +588,9 @@ export const order = pgTable(
     conversationId: text("conversation_id").references(() => conversation.id, {
       onDelete: "set null",
     }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
     cartId: text("cart_id").references(() => cart.id, {
       onDelete: "set null",
     }),
@@ -607,5 +611,10 @@ export const order = pgTable(
   (t) => [
     uniqueIndex("order_org_number_uq").on(t.organizationId, t.orderNumber),
     index("order_org_status_idx").on(t.organizationId, t.status),
+    index("order_org_contact_status_idx").on(
+      t.organizationId,
+      t.contactId,
+      t.status
+    ),
   ]
 );
