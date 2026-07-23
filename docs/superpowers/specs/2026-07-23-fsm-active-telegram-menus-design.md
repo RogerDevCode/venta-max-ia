@@ -35,10 +35,9 @@ atómica que:
 4. el menú no fue consumido por otro callback concurrente.
 
 Un callback válido consume el menú antes de ejecutar la acción. Un callback
-inválido no llega a la IA, responde con el aviso de menú no activo y solicita la
-eliminación de su teclado. Todo callback válido o inválido limpia el teclado del
-mensaje pulsado en segundo plano; el fallo de esa limpieza se registra y nunca
-modifica el resultado de la transición.
+inválido no llega a la IA y responde con el aviso de menú no activo. Los teclados
+anteriores permanecen visibles en Telegram para conservar el historial visual,
+pero no pueden ejecutar transiciones ni llegar a la IA.
 
 ## Transiciones y navegación
 
@@ -66,5 +65,5 @@ Todo submenú Telegram incluirá al final una fila con los botones `↩ Retornar
 3. Una acción no permitida por el estado vigente se rechaza.
 4. Todo submenú Telegram contiene Retornar e Inicio; `r`/`R` e `i`/`I` tienen el
    mismo resultado que sus botones.
-5. Se intenta limpiar el teclado tras cada callback, sin bloquear el ACK ni la
-   transición.
+5. Los teclados usados y vencidos permanecen visibles, pero sus callbacks no
+   alteran el estado ni ingresan al agente.

@@ -1,6 +1,6 @@
 import { safeEqual } from "@/server/inbox/webhook";
 import { ingestInboundMessage } from "@/server/inbox/ingest";
-import { answerCallbackQuery, clearInlineKeyboard, sendChatAction } from "@/lib/telegram/client";
+import { answerCallbackQuery, sendChatAction } from "@/lib/telegram/client";
 import { consumeActiveTelegramMenu } from "@/server/inbox/telegram-menu-guard";
 import { getTelegramCredentialsByOrg } from "@/server/telegram/credentials";
 
@@ -93,11 +93,6 @@ export async function processTelegramUpdate(input: {
       messageId: menuMessageId,
       action: cbData,
     });
-    if (menuMessageId) {
-      void clearInlineKeyboard({ chatId, messageId: menuMessageId, token }).catch((error) =>
-        console.error("[telegram] no se pudo limpiar teclado", error)
-      );
-    }
     if (!menuResult.accepted) {
       void answerCallbackQuery({
         callbackQueryId: queryId,
