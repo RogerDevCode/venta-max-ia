@@ -1,0 +1,70 @@
+# Menús Telegram activos y transiciones FSB
+
+## Objetivo
+
+Impedir que botones de menús Telegram antiguos alteren una conversación y hacer
+que los flujos de menú respeten los estados permitidos de la FSB. Cada submenú
+ofrecerá siempre las acciones Inicio y Retornar, disponibles tanto como botones
+como mediante los textos `i`/`I` y `r`/`R`.
+
+## Estado durable del menú
+
+`conversation.stateMetadata.activeMenu` contendrá:
+
+- `telegramMessageId`: ID numérico del único mensaje Telegram cuyo teclado está
+  activo.
+- `version`: contador creciente del menú.
+- `state`: estado FSB en el que se emitió el menú.
+- `allowedActions`: payloads que ese menú puede aceptar.
+- `parent`: estado o ámbito anterior, para resolver Retornar.
+
+Al enviar un teclado Telegram, el servidor recibirá su `message_id` y persistirá
+el nuevo menú activo. La escritura se hará scoped por organización y de forma
+condicional para que un menú anterior no pueda reemplazar accidentalmente a uno
+más reciente.
+
+## Ingreso y consumo de callbacks
+
+El webhook conservará el `message_id` del mensaje que originó el callback. Antes
+de crear un mensaje entrante o iniciar el turno de IA, validará en una operación
+atómica que:
+
+1. el callback procede de `activeMenu.telegramMessageId`;
+2. la acción pertenece a `allowedActions`;
+3. la transición está permitida desde el estado FSB actual;
+4. el menú no fue consumido por otro callback concurrente.
+
+Un callback válido consume el menú antes de ejecutar la acción. Un callback
+inválido no llega a la IA, responde con el aviso de menú no activo y solicita la
+eliminación de su teclado. Todo callback válido o inválido limpia el teclado del
+mensaje pulsado en segundo plano; el fallo de esa limpieza se registra y nunca
+modifica el resultado de la transición.
+
+## Transiciones y navegación
+
+La política central define, por estado, las acciones de menú permitidas y su
+estado destino. Las entradas globales `/start`, `/reset` y `/menu` reinician o
+abren el menú principal de forma explícita. `catalog:home`, `i` e `I` van al
+menú principal. `catalog:return`, `r` y `R` vuelven al ámbito padre almacenado;
+si no existe padre, vuelven al menú principal.
+
+Todo submenú Telegram incluirá al final una fila con los botones `↩ Retornar` y
+`⌂ Inicio`. Las respuestas sin teclado no cambian por sí solas el menú activo.
+
+## Límites y compatibilidad
+
+- No se añaden servicios externos ni colas.
+- Se mantiene el aislamiento multi-tenant y el sandbox `is_test`.
+- Los mensajes de texto numéricos continúan siendo compatibles, pero se resuelven
+  solamente contra el estado FSB vigente.
+- WhatsApp conserva su navegación textual; la persistencia FSB es compartida.
+
+## Pruebas de aceptación
+
+1. Un callback de un menú reemplazado no crea mensaje ni dispara IA.
+2. Dos clics simultáneos sobre el mismo botón producen una sola transición.
+3. Una acción no permitida por el estado vigente se rechaza.
+4. Todo submenú Telegram contiene Retornar e Inicio; `r`/`R` e `i`/`I` tienen el
+   mismo resultado que sus botones.
+5. Se intenta limpiar el teclado tras cada callback, sin bloquear el ACK ni la
+   transición.
