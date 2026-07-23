@@ -1,6 +1,8 @@
 import { safeEqual } from "@/server/inbox/webhook";
 import { ingestInboundMessage } from "@/server/inbox/ingest";
-import { answerCallbackQuery, sendChatAction } from "@/lib/telegram/client";
+import { answerCallbackQuery, clearInlineKeyboard, sendChatAction } from "@/lib/telegram/client";
+import { consumeActiveTelegramMenu } from "@/server/inbox/telegram-menu-guard";
+import { getTelegramCredentialsByOrg } from "@/server/telegram/credentials";
 
 /**
  * Autenticación e ingesta de actualizaciones de la Telegram Bot API.
@@ -75,12 +77,35 @@ export async function processTelegramUpdate(input: {
 
     const cbData = cb.data ?? "[Botón presionado]";
     const channelMessageId = `tg_cb_${queryId}`;
+    const menuMessageId = cb.message?.message_id;
+    const credentials = await getTelegramCredentialsByOrg(organizationId);
+    const token = credentials?.status === "connected" ? credentials.token : undefined;
 
     // Disparar señal de escritura en T=0ms sin bloquear
-    void sendChatAction({ chatId, action: "typing" }).catch(() => {});
+    void sendChatAction({ chatId, action: "typing", token }).catch(() => {});
 
     // Disparar respuesta al callback en segundo plano sin bloquear la ingesta del mensaje
-    void answerCallbackQuery({ callbackQueryId: queryId }).catch(() => {});
+    void answerCallbackQuery({ callbackQueryId: queryId, token }).catch(() => {});
+
+    const menuResult = await consumeActiveTelegramMenu({
+      organizationId,
+      chatId,
+      messageId: menuMessageId,
+      action: cbData,
+    });
+    if (menuMessageId) {
+      void clearInlineKeyboard({ chatId, messageId: menuMessageId, token }).catch((error) =>
+        console.error("[telegram] no se pudo limpiar teclado", error)
+      );
+    }
+    if (!menuResult.accepted) {
+      void answerCallbackQuery({
+        callbackQueryId: queryId,
+        token,
+        text: menuResult.reason === "invalid_transition" ? "Esta opción no está disponible ahora." : "Este menú ya no está activo.",
+      }).catch(() => {});
+      return;
+    }
 
     await ingestInboundMessage({
       organizationId,

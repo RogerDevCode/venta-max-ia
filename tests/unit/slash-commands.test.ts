@@ -101,6 +101,8 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       expect(parseSlashCommand("/start")).toBe("start");
       expect(parseSlashCommand("/menu")).toBe("menu");
       expect(parseSlashCommand("menu:categorias")).toBe("menu:categorias");
+      expect(parseSlashCommand("I")).toBe("catalog:home");
+      expect(parseSlashCommand("r")).toBe("catalog:return");
       expect(parseSlashCommand("1")).toBe("catalog:number:1");
       expect(parseSlashCommand("2")).toBe("catalog:number:2");
       expect(parseSlashCommand("3")).toBe("catalog:number:3");

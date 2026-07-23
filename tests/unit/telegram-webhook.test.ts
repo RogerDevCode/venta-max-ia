@@ -8,6 +8,8 @@ import {
 const insertedMessages: Record<string, unknown>[] = [];
 const updatedConversations: Record<string, unknown>[] = [];
 const mockPublish = vi.fn();
+const mockConsumeActiveMenu = vi.fn().mockResolvedValue({ accepted: true });
+const mockClearInlineKeyboard = vi.fn().mockResolvedValue(true);
 
 vi.mock("@/server/events/bus", () => ({
   publish: (orgId: string, event: unknown) => mockPublish(orgId, event),
@@ -19,7 +21,16 @@ vi.mock("@/server/ai/trigger", () => ({
 
 vi.mock("@/lib/telegram/client", () => ({
   answerCallbackQuery: vi.fn().mockResolvedValue(true),
+  clearInlineKeyboard: (...args: unknown[]) => mockClearInlineKeyboard(...args),
   sendChatAction: vi.fn().mockResolvedValue(true),
+}));
+
+vi.mock("@/server/inbox/telegram-menu-guard", () => ({
+  consumeActiveTelegramMenu: (...args: unknown[]) => mockConsumeActiveMenu(...args),
+}));
+
+vi.mock("@/server/telegram/credentials", () => ({
+  getTelegramCredentialsByOrg: vi.fn().mockResolvedValue({ token: "tenant-token", status: "connected" }),
 }));
 
 vi.mock("@/lib/db", () => {
@@ -179,6 +190,7 @@ describe("Telegram Webhook Handler (Paso 1.2)", () => {
   });
 
   it("procesa un callback_query (clic en menú) e ingesta el botón elegido como mensaje (Paso 2.2)", async () => {
+    mockConsumeActiveMenu.mockResolvedValueOnce({ accepted: true });
     const updateCb: TelegramUpdate = {
       update_id: 1003,
       callback_query: {
@@ -211,6 +223,25 @@ describe("Telegram Webhook Handler (Paso 1.2)", () => {
 
     // Verificar notificación en tiempo real a la UI (SSE)
     expect(mockPublish).toHaveBeenCalledWith("org_1", expect.objectContaining({ type: "message.new" }));
+    expect(mockClearInlineKeyboard).toHaveBeenCalledWith(expect.objectContaining({ messageId: 888 }));
+  });
+
+  it("rechaza un callback de menú antiguo antes de crear un mensaje", async () => {
+    mockConsumeActiveMenu.mockResolvedValueOnce({ accepted: false, reason: "stale_menu" });
+    const before = insertedMessages.length;
+    await processTelegramUpdate({
+      organizationId: "org_1",
+      update: {
+        update_id: 1004,
+        callback_query: {
+          id: "cb_old_menu",
+          from: { id: 123456789, is_bot: false, first_name: "Juan" },
+          message: { message_id: 1, chat: { id: 123456789, type: "private" }, date: 1780000011 },
+          data: "menu:categorias",
+        },
+      },
+    });
+    expect(insertedMessages).toHaveLength(before);
+    expect(mockClearInlineKeyboard).toHaveBeenCalledWith(expect.objectContaining({ messageId: 1 }));
   });
 });
-
