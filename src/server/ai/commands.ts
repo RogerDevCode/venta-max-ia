@@ -6,7 +6,6 @@ import { sendText } from "@/server/inbox/send";
 import { applyHandoff } from "@/server/ai/pipeline";
 import { buscarProductos, listarCategorias, listCatalogProducts } from "@/server/ecommerce/service";
 import { preloadCatalogCache } from "@/server/ecommerce/cache";
-import { appendSubmenuNavigation, submenuNavigation } from "@/server/ai/menu-fsm";
 
 export type SlashCommandType =
   | "start"
@@ -118,14 +117,10 @@ export async function processSlashCommand(input: {
     await updateState({ current_state: "menu:catalog", active_step: "viewing_catalog", catalogCategoryIds: categorias.map((c) => c.id), catalogCategoryId: null });
     const text = `📁 *Categorías de Productos*:\n${categorias.map((c, index) => `${index + 1}. *${c.name}*${c.description ? `: ${c.description}` : ""}`).join("\n")}\n\nElige una categoría con su botón o número.`;
     const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
-    await deliverCommandReply(conversation, text, { replyMarkup: isTelegram ? appendSubmenuNavigation({ inline_keyboard: categorias.map((c, index) => [{ text: `${index + 1}. ${c.name}`, callback_data: `catalog:category:${c.id}` }]) }) : undefined, channel });
+    await deliverCommandReply(conversation, text, { replyMarkup: isTelegram ? { inline_keyboard: categorias.map((c, index) => [{ text: `${index + 1}. ${c.name}`, callback_data: `catalog:category:${c.id}` }]) } : undefined, channel });
   }
 
-  if (command === "catalog:return") {
-    if (currentState.active_step === "viewing_category") await showCategories();
-    else return processSlashCommand({ ...input, command: "catalog:home" });
-    return { handled: true };
-  }
+  if (command === "catalog:return") { await showCategories(); return { handled: true }; }
   if (command === "catalog:home") {
     await updateState({ current_state: "menu:main", active_step: "main_menu", catalogCategoryIds: null, catalogCategoryId: null });
     const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
@@ -149,7 +144,7 @@ export async function processSlashCommand(input: {
       await updateState({ current_state: "menu:catalog", active_step: "viewing_category", catalogCategoryId: categoryId });
       const text = products.length ? `🛍️ *Productos*:\n${products.map((p) => `• ${p.name} (${p.sku}): $${p.price.toLocaleString("es-CL")} CLP (Stock: ${p.stock})`).join("\n")}\n\nR. Retornar · I. Inicio` : "Esta categoría no tiene productos activos.\n\nR. Retornar · I. Inicio";
       const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
-      await deliverCommandReply(conversation, text, { replyMarkup: isTelegram ? submenuNavigation : undefined, channel });
+      await deliverCommandReply(conversation, text, { replyMarkup: isTelegram ? { inline_keyboard: [[{ text: "↩ Retornar", callback_data: "catalog:return" }, { text: "⌂ Inicio", callback_data: "catalog:home" }]] } : undefined, channel });
     } catch { await showCategories(); }
     return { handled: true };
   }
@@ -232,7 +227,7 @@ export async function processSlashCommand(input: {
       const text = productos.length > 0
         ? `⚡ *Promociones del Día*:\n` + productos.map((p) => `• ${p.name} (${p.sku}): $${p.price.toLocaleString("es-CL")} CLP`).join("\n")
         : `Por el momento no hay promociones activas registradas.`;
-      await deliverCommandReply(conversation, text, { replyMarkup: lastInboundWaId?.startsWith("tg_") ? submenuNavigation : undefined, channel });
+      await deliverCommandReply(conversation, text);
       return { handled: true };
     }
 
@@ -242,7 +237,7 @@ export async function processSlashCommand(input: {
       const text = productos.length > 0
         ? `⭐ *Productos Mas Vendidos / Recomendados*:\n` + productos.map((p) => `• ${p.name} (${p.sku}): $${p.price.toLocaleString("es-CL")} CLP`).join("\n")
         : `No hay productos recomendados configurados.`;
-      await deliverCommandReply(conversation, text, { replyMarkup: lastInboundWaId?.startsWith("tg_") ? submenuNavigation : undefined, channel });
+      await deliverCommandReply(conversation, text);
       return { handled: true };
     }
 
@@ -263,14 +258,14 @@ export async function processSlashCommand(input: {
       const cart = cartRows[0];
       const items = (cart?.items as Array<{ name: string; quantity: number; unitPrice: number }>) ?? [];
       if (items.length === 0) {
-        await deliverCommandReply(conversation, "🛒 Tu carrito de compras está vacío actualmente.", { replyMarkup: lastInboundWaId?.startsWith("tg_") ? submenuNavigation : undefined, channel });
+        await deliverCommandReply(conversation, "🛒 Tu carrito de compras está vacío actualmente.");
       } else {
         const total = items.reduce((acc, i) => acc + i.quantity * i.unitPrice, 0);
         const text =
           `🛒 *Tu Carrito Actual*:\n` +
           items.map((i) => `• ${i.name} x${i.quantity}: $${(i.quantity * i.unitPrice).toLocaleString("es-CL")} CLP`).join("\n") +
           `\n\n*Total:* $${total.toLocaleString("es-CL")} CLP\n\nPara confirmar tu compra responde con la palabra "confirmar".`;
-        await deliverCommandReply(conversation, text, { replyMarkup: lastInboundWaId?.startsWith("tg_") ? submenuNavigation : undefined, channel });
+        await deliverCommandReply(conversation, text);
       }
       return { handled: true };
     }
@@ -291,14 +286,14 @@ export async function processSlashCommand(input: {
         .limit(3);
 
       if (orderRows.length === 0) {
-        await deliverCommandReply(conversation, "📋 No tienes pedidos registrados aún.", { replyMarkup: lastInboundWaId?.startsWith("tg_") ? submenuNavigation : undefined, channel });
+        await deliverCommandReply(conversation, "📋 No tienes pedidos registrados aún.");
       } else {
         const text =
           `📋 *Tus Últimos Pedidos*:\n` +
           orderRows
             .map((o) => `• N° ${o.orderNumber}: $${o.totalAmount.toLocaleString("es-CL")} CLP (Estado: ${o.status})`)
             .join("\n");
-        await deliverCommandReply(conversation, text, { replyMarkup: lastInboundWaId?.startsWith("tg_") ? submenuNavigation : undefined, channel });
+        await deliverCommandReply(conversation, text);
       }
       return { handled: true };
     }

@@ -199,17 +199,6 @@ export async function answerCallbackQuery(opts: {
   });
 }
 
-export async function clearInlineKeyboard(opts: {
-  chatId: string | number;
-  messageId: number;
-  token?: string;
-}): Promise<boolean> {
-  return telegramRequest<boolean>("editMessageReplyMarkup", {
-    token: opts.token,
-    body: { chat_id: opts.chatId, message_id: opts.messageId, reply_markup: { inline_keyboard: [] } },
-  });
-}
-
 export interface TelegramBotInfo {
   id: number;
   is_bot: boolean;

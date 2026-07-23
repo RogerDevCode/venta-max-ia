@@ -1,6 +1,5 @@
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
-import { scoped } from "@/lib/db/tenant";
 import { newId } from "@/lib/db/ids";
 import { graphRequest, MetaApiError, normalizeRecipient } from "@/lib/meta/client";
 import { sendMessage, TelegramApiError } from "@/lib/telegram/client";
@@ -326,29 +325,6 @@ export async function sendTelegramText(input: {
   }
 
   const tgMessageId = `tg_${row.contact.phone}_${res.message_id}`;
-
-  if (input.replyMarkup && typeof input.replyMarkup === "object" && "inline_keyboard" in input.replyMarkup) {
-    const markup = input.replyMarkup as { inline_keyboard?: Array<Array<{ callback_data?: string }>> };
-    const allowedActions = markup.inline_keyboard?.flat().map((button) => button.callback_data).filter((value): value is string => Boolean(value)) ?? [];
-    const currentState = (conversation.stateMetadata ?? {}) as Record<string, unknown>;
-    const priorMenu = currentState.activeMenu as { version?: number } | undefined;
-    await db
-      .update(schema.conversation)
-      .set({
-        stateMetadata: {
-          ...currentState,
-          activeMenu: {
-            telegramMessageId: res.message_id,
-            version: (priorMenu?.version ?? 0) + 1,
-            state: currentState.current_state ?? "menu:main",
-            allowedActions,
-            parent: currentState.current_state ?? "menu:main",
-          },
-        },
-        updatedAt: new Date(),
-      })
-      .where(and(scoped(schema.conversation.organizationId, input.organizationId), eq(schema.conversation.id, input.conversationId)));
-  }
 
   const inserted = await db
     .insert(schema.message)
