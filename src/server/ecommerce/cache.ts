@@ -25,7 +25,6 @@ export type CachedProduct = {
 export type TenantCatalogCache = {
   categories: CachedCategory[];
   products: CachedProduct[];
-  reservedStock: Map<string, number>; // SKU o ID -> cantidad reservada en carritos activos
   expiresAt: number;
   promise: Promise<TenantCatalogCache> | null;
 };
@@ -68,8 +67,7 @@ export async function preloadCatalogCache(organizationId: string): Promise<Tenan
   const promise = (async () => {
     const db = getDb();
 
-    // Consultas en paralelo no bloqueantes para categorías, productos activos y carritos activos
-    const [categoriesRows, productsRows, activeCarts] = await Promise.all([
+    const [categoriesRows, productsRows] = await Promise.all([
       db
         .select({
           id: schema.category.id,
@@ -102,36 +100,11 @@ export async function preloadCatalogCache(organizationId: string): Promise<Tenan
           )
         )
         .orderBy(asc(schema.product.name)),
-
-      db
-        .select({
-          items: schema.cart.items,
-        })
-        .from(schema.cart)
-        .where(
-          scoped(
-            schema.cart.organizationId,
-            organizationId,
-            eq(schema.cart.status, "active")
-          )
-        ),
     ]);
-
-    // Calcular stock reservado por SKUs/IDs en carritos activos
-    const reservedStock = new Map<string, number>();
-    for (const cartRow of activeCarts) {
-      const items = (cartRow.items as CartItem[]) ?? [];
-      for (const item of items) {
-        if (!item.sku) continue;
-        const current = reservedStock.get(item.sku) ?? 0;
-        reservedStock.set(item.sku, current + (item.quantity || 1));
-      }
-    }
 
     const newEntry: TenantCatalogCache = {
       categories: categoriesRows,
       products: productsRows,
-      reservedStock,
       expiresAt: Date.now() + CACHE_TTL_MS,
       promise: null,
     };
@@ -143,7 +116,6 @@ export async function preloadCatalogCache(organizationId: string): Promise<Tenan
   const tempEntry: TenantCatalogCache = existing ?? {
     categories: [],
     products: [],
-    reservedStock: new Map(),
     expiresAt: 0,
     promise,
   };
@@ -175,26 +147,7 @@ export async function getOrLoadCatalogCache(organizationId: string): Promise<Ten
 }
 
 /**
- * Actualiza en memoria el stock reservado cuando se agrega o modifica un carrito.
- */
-export function updateMemoryCartReservation(
-  organizationId: string,
-  skuOrId: string,
-  deltaQuantity: number
-): void {
-  const cached = getCatalogCacheMap().get(organizationId);
-  if (!cached || cached.expiresAt <= Date.now()) return;
-  const current = cached.reservedStock.get(skuOrId) ?? 0;
-  const next = Math.max(0, current + deltaQuantity);
-  if (next === 0) {
-    cached.reservedStock.delete(skuOrId);
-  } else {
-    cached.reservedStock.set(skuOrId, next);
-  }
-}
-
-/**
- * Actualiza en memoria el stock final de un producto y libera la reserva en carrito al confirmar un pedido.
+ * Actualiza en memoria el stock final después de confirmar un pedido.
  */
 export function commitMemoryOrderStock(
   organizationId: string,
@@ -204,20 +157,7 @@ export function commitMemoryOrderStock(
   if (!cached || cached.expiresAt <= Date.now()) return;
 
   for (const item of items) {
-    if (!item.sku) continue;
-    // Liberar reserva del carrito
-    const currentReserved = cached.reservedStock.get(item.sku) ?? 0;
-    const nextReserved = Math.max(0, currentReserved - item.quantity);
-    if (nextReserved === 0) {
-      cached.reservedStock.delete(item.sku);
-    } else {
-      cached.reservedStock.set(item.sku, nextReserved);
-    }
-
-    // Descontar del stock real en memoria del producto
-    const prod = cached.products.find(
-      (p) => p.sku === item.sku || p.id === item.sku
-    );
+    const prod = cached.products.find((p) => p.id === item.productId);
     if (prod) {
       prod.stock = Math.max(0, prod.stock - item.quantity);
     }

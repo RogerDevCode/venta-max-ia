@@ -20,6 +20,8 @@ export function CatalogClient() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categoryMessage, setCategoryMessage] = useState<string | null>(null);
   const [productMessage, setProductMessage] = useState<string | null>(null);
+  const [maxUnitsPerProduct, setMaxUnitsPerProduct] = useState("10");
+  const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
 
   // Categorías
   const [categoryName, setCategoryName] = useState("");
@@ -41,9 +43,10 @@ export function CatalogClient() {
   const [improvingProduct, setImprovingProduct] = useState(false);
 
   const refetch = useCallback(async () => {
-    const [catsRes, prodsRes] = await Promise.all([
+    const [catsRes, prodsRes, settingsRes] = await Promise.all([
       fetch("/api/catalog/categories"),
       fetch("/api/catalog/products"),
+      fetch("/api/catalog/settings"),
     ]);
 
     if (catsRes.ok) {
@@ -56,11 +59,34 @@ export function CatalogClient() {
       const data = (await prodsRes.json()) as { products: Product[] };
       setProducts(data.products);
     }
+    if (settingsRes.ok) {
+      const data = (await settingsRes.json()) as { settings: { maxUnitsPerProduct: number } };
+      setMaxUnitsPerProduct(String(data.settings.maxUnitsPerProduct));
+    }
   }, []);
 
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  async function saveCommerceLimit() {
+    setSettingsMessage(null);
+    const value = Number(maxUnitsPerProduct);
+    if (!Number.isInteger(value) || value < 1 || value > 1000) {
+      setSettingsMessage("⚠️ El máximo debe ser un entero entre 1 y 1000.");
+      return;
+    }
+    const res = await fetch("/api/catalog/settings", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ maxUnitsPerProduct: value }),
+    });
+    if (!res.ok) {
+      setSettingsMessage(`⚠️ ${await errorMessage(res)}`);
+      return;
+    }
+    setSettingsMessage("✅ Límite actualizado.");
+  }
 
   // Acciones de categoría
   async function createCategory() {
@@ -326,6 +352,33 @@ export function CatalogClient() {
           Administra las categorías e inventario de este negocio. Los productos son consultados y mostrados en tiempo real por el agente de IA a tus clientes.
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Límite de compra</CardTitle>
+          <CardDescription>
+            Máximo por producto y carrito. El carrito no reserva inventario; el stock se confirma al formalizar el pedido.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-56 space-y-1.5">
+              <Label htmlFor="max-units-per-product">Unidades máximas</Label>
+              <Input
+                id="max-units-per-product"
+                type="number"
+                min="1"
+                max="1000"
+                step="1"
+                value={maxUnitsPerProduct}
+                onChange={(event) => setMaxUnitsPerProduct(event.target.value)}
+              />
+            </div>
+            <Button type="button" onClick={() => void saveCommerceLimit()}>Guardar límite</Button>
+          </div>
+          {settingsMessage && <p role="status" className="text-sm">{settingsMessage}</p>}
+        </CardContent>
+      </Card>
 
       {/* SECCIÓN CATEGORÍAS */}
       <Card>
@@ -742,4 +795,3 @@ export function CatalogClient() {
     </div>
   );
 }
-

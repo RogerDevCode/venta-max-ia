@@ -47,12 +47,7 @@ export const AgentAction = z.discriminatedUnion("action", [
     query: z.string().min(1),
     reply: z.string().optional(),
   }),
-  z.object({
-    action: z.literal("agregar_al_carrito"),
-    sku: z.string().min(1),
-    cantidad: z.number().int().positive().optional(),
-    reply: z.string().optional(),
-  }),
+  z.object({ action: z.literal("mostrar_catalogo") }),
   z.object({
     action: z.literal("confirmar_pedido"),
     reply: z.string().optional(),

@@ -58,7 +58,10 @@ vi.mock("@/server/ecommerce/service", async (importOriginal) => {
   return {
     ...actual,
     buscarProductos: vi.fn(),
-    agregarAlCarrito: vi.fn(),
+    listarCategorias: vi.fn().mockResolvedValue([]),
+    listCatalogProducts: vi.fn().mockResolvedValue([]),
+    getProductForCustomer: vi.fn().mockResolvedValue(null),
+    addProductToCart: vi.fn(),
     confirmarPedido: vi.fn(),
   };
 });
@@ -150,7 +153,6 @@ describe("Simulación E2E de Compra en E-Commerce con IA (Paso 5.2)", () => {
     vi.mocked(ecommerceService.buscarProductos).mockResolvedValueOnce([
       {
         id: "prd_1",
-        sku: "SKU-DEN-01",
         name: "Servicio Dental Urgencia",
         price: 3500000,
         stock: 10,
@@ -181,57 +183,18 @@ describe("Simulación E2E de Compra en E-Commerce con IA (Paso 5.2)", () => {
     );
   });
 
-  it("2. agregar_al_carrito añade el producto y responde confirmación de carrito", async () => {
-    vi.mocked(ecommerceService.agregarAlCarrito).mockResolvedValueOnce({
-      ok: true,
-      cart: {
-        id: "crt_1",
-        organizationId: "org_ecom",
-        conversationId: "conv_ecom",
-        items: [],
-        status: "active",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      product: {
-        id: "prd_1",
-        organizationId: "org_ecom",
-        categoryId: "cat_general",
-        sku: "SKU-DEN-01",
-        name: "Servicio Dental Urgencia",
-        description: null,
-        price: 3500000,
-        stock: 10,
-        active: true,
-        metadata: {},
-        deletedAt: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    });
-
+  it("2. una intención de compra abre el catálogo sin aceptar SKU", async () => {
     mockChatJson.mockResolvedValueOnce({
       ok: true,
-      data: {
-        action: "agregar_al_carrito",
-        sku: "SKU-DEN-01",
-        cantidad: 2,
-        reply: "He añadido 2 unidades del Servicio Dental de Urgencia al carrito.",
-      },
+      data: { action: "mostrar_catalogo" },
     });
 
     await runAgentTurn("conv_ecom");
 
-    expect(ecommerceService.agregarAlCarrito).toHaveBeenCalledWith({
-      organizationId: "org_ecom",
-      conversationId: "conv_ecom",
-      sku: "SKU-DEN-01",
-      cantidad: 2,
-    });
     expect(mockSendText).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationId: "conv_ecom",
-        text: "He añadido 2 unidades del Servicio Dental de Urgencia al carrito.",
+        text: expect.stringContaining("Categorías de Productos"),
       })
     );
   });

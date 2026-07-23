@@ -1,6 +1,7 @@
 import {
   bigint,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -532,6 +533,21 @@ export const product = pgTable(
   ]
 );
 
+export const commerceSettings = pgTable(
+  "commerce_settings",
+  {
+    organizationId: text("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    maxUnitsPerProduct: integer("max_units_per_product").notNull().default(10),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("commerce_settings_max_units_positive", sql`${t.maxUnitsPerProduct} > 0`),
+  ]
+);
+
 export const cart = pgTable(
   "cart",
   {
@@ -543,7 +559,7 @@ export const cart = pgTable(
       .notNull()
       .references(() => conversation.id, { onDelete: "cascade" }),
     items: jsonb("items")
-      .$type<{ sku: string; quantity: number; unitPrice: number; name: string }[]>()
+      .$type<{ productId: string; quantity: number; unitPrice: number; name: string; presentation: string | null }[]>()
       .notNull()
       .default([]),
     status: text("status", { enum: ["active", "converted", "abandoned"] })
@@ -576,7 +592,7 @@ export const order = pgTable(
     }),
     orderNumber: text("order_number").notNull(),
     items: jsonb("items")
-      .$type<{ sku: string; quantity: number; unitPrice: number; name: string }[]>()
+      .$type<{ productId: string; quantity: number; unitPrice: number; name: string; presentation: string | null }[]>()
       .notNull()
       .default([]),
     totalAmount: integer("total_amount").notNull().default(0),

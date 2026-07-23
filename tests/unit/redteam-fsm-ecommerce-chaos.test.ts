@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentAction, resolveStage, degradeAction } from "@/server/ai/actions";
-import { agregarAlCarrito, confirmarPedido } from "@/server/ecommerce/service";
+import { confirmarPedido, getProductForCustomer } from "@/server/ecommerce/service";
 import { runAgentTurn } from "@/server/ai/pipeline";
 
 // Mocks para simular base de datos y aislamiento del FSM / E-Commerce
@@ -15,6 +15,7 @@ const { mockDbState, mockUpdateSet, mockSendText, mockSchema, mockChatJson, mock
       product: { id: "id", organizationId: "organization_id", sku: "sku", active: "active", name: "name", price: "price", stock: "stock", description: "description" },
       cart: { id: "id", organizationId: "organization_id", conversationId: "conversation_id", status: "status", items: "items" },
       order: { id: "id", organizationId: "organization_id", conversationId: "conversation_id", cartId: "cart_id", orderNumber: "order_number", items: "items", totalAmount: "total_amount", status: "status" },
+      commerceSettings: { organizationId: "organization_id", maxUnitsPerProduct: "max_units_per_product" },
     };
     return {
       mockChatJson: vi.fn(),
@@ -57,8 +58,10 @@ vi.mock("@/server/events/bus", () => ({
   publish: vi.fn(),
 }));
 
-vi.mock("@/lib/db", () => ({
-  getDb: () => ({
+vi.mock("@/lib/db", () => {
+  const makeDb = (): Record<string, unknown> => ({
+    transaction: (callback: (tx: unknown) => unknown) => callback(makeDb()),
+    execute: () => Promise.resolve([]),
     select: () => ({
       from: (table: unknown) => ({
         where: (_cond?: unknown) => ({
@@ -98,19 +101,18 @@ vi.mock("@/lib/db", () => ({
         if (table === mockSchema.conversation) mockUpdateSet(data);
         return {
           where: () => {
-            if (table === mockSchema.conversation) {
-              return {
-                returning: () => Promise.resolve([mockDbState.conversation]),
-              };
-            }
-            return Promise.resolve([mockDbState.conversation]);
+            return {
+              returning: () => Promise.resolve(
+                table === mockSchema.product ? mockDbState.products : [mockDbState.conversation]
+              ),
+            };
           },
         };
       },
     }),
-  }),
-  schema: mockSchema,
-}));
+  });
+  return { getDb: makeDb, schema: mockSchema };
+});
 
 describe("Red Team: FSM State Manipulation, E-Commerce Chaos & Sandbox Boundary Enforcement", () => {
   beforeEach(() => {
@@ -161,12 +163,13 @@ describe("Red Team: FSM State Manipulation, E-Commerce Chaos & Sandbox Boundary 
       });
       expect(resFloat.success).toBe(false);
 
-      const resValid = AgentAction.safeParse({
+      const resFormerAction = AgentAction.safeParse({
         action: "agregar_al_carrito",
         sku: "PROD-001",
         cantidad: 5,
       });
-      expect(resValid.success).toBe(true);
+      expect(resFormerAction.success).toBe(false);
+      expect(AgentAction.safeParse({ action: "mostrar_catalogo" }).success).toBe(true);
     });
 
     it("resolveStage debe degradar pacíficamente intentos de Directory Traversal o inyección en move_stage", () => {
@@ -203,20 +206,10 @@ describe("Red Team: FSM State Manipulation, E-Commerce Chaos & Sandbox Boundary 
   });
 
   describe("2. E-Commerce Logic & Inventory Chaos Defense (`service.ts`)", () => {
-    it("agregarAlCarrito debe fallar con 'producto_no_encontrado' si el SKU no existe o está inactivo en el tenant actual", async () => {
+    it("la selección por productId no encuentra productos ajenos o inactivos", async () => {
       mockDbState.products = []; // No hay productos en la BD para este tenant
 
-      const res = await agregarAlCarrito({
-        organizationId: "org_chaos",
-        conversationId: "conv_chaos_123",
-        sku: "SKU-HACK-999",
-        cantidad: 1,
-      });
-
-      expect(res.ok).toBe(false);
-      if (!res.ok) {
-        expect(res.error).toBe("producto_no_encontrado");
-      }
+      await expect(getProductForCustomer("org_chaos", "prod_hack_999")).resolves.toBeNull();
     });
 
     it("confirmarPedido debe rechazar con 'carrito_vacio' si la conversación no tiene un carrito activo o ítems en 0", async () => {
@@ -233,7 +226,11 @@ describe("Red Team: FSM State Manipulation, E-Commerce Chaos & Sandbox Boundary 
       }
     });
 
-    it("confirmarPedido calcula el totalAmount exactamente y previene overflow o subtotales negativos si un ítem fue manipulado", async () => {
+    it("confirmarPedido calcula el totalAmount con items basados en productId", async () => {
+      mockDbState.products = [{
+        id: "prod_a", organizationId: "org_chaos", name: "Producto A", description: "Caja",
+        price: 15000, stock: 3, active: true, deletedAt: null,
+      }];
       mockDbState.carts = [
         {
           id: "cart_123",
@@ -241,8 +238,7 @@ describe("Red Team: FSM State Manipulation, E-Commerce Chaos & Sandbox Boundary 
           conversationId: "conv_chaos_123",
           status: "active",
           items: [
-            { sku: "ITEM-A", name: "Producto A", quantity: 2, unitPrice: 15000 }, // $300.00
-            { sku: "ITEM-B", name: "Producto B", quantity: 1, unitPrice: 5000 }, // $50.00
+            { productId: "prod_a", name: "Producto A", presentation: "Caja", quantity: 2, unitPrice: 15000 },
           ],
         },
       ];
@@ -254,7 +250,7 @@ describe("Red Team: FSM State Manipulation, E-Commerce Chaos & Sandbox Boundary 
 
       expect(res.ok).toBe(true);
       if (res.ok) {
-        expect(res.order.totalAmount).toBe(35000); // 2*15000 + 1*5000 = 35000 ($350.00)
+        expect(res.order.totalAmount).toBe(30000);
         expect(res.order.orderNumber).toMatch(/^ORD-\d{6}$/);
       }
     });

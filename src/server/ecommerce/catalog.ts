@@ -152,7 +152,7 @@ export async function listCatalogProducts(organizationId: string, categoryId?: s
       : cached.products.filter((p) => p.active && !p.deletedAt);
     return prods.map((p) => ({
       ...p,
-      stock: Math.max(0, p.stock - (cached.reservedStock.get(p.sku ?? p.id) ?? 0)),
+      stock: p.stock,
     }));
   }
 

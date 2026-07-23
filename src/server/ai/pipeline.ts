@@ -13,10 +13,9 @@ import { buildAgentSystemPrompt } from "@/server/ai/prompts";
 import { buildRagContext } from "@/server/ai/rag/rag-builder";
 import {
   buscarProductos,
-  agregarAlCarrito,
   confirmarPedido,
 } from "@/server/ecommerce/service";
-import { parseSlashCommand, processSlashCommand } from "@/server/ai/commands";
+import { parseSlashCommand, processPendingProductQuantity, processSlashCommand } from "@/server/ai/commands";
 
 /**
  * Turno del agente (FR-021..FR-025).
@@ -140,6 +139,23 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   const lastInbound = [...history].reverse().find((m) => m.direction === "in");
 
   if (!lastInbound) return;
+
+  const state = (conversation.stateMetadata ?? {}) as Record<string, unknown>;
+  if (lastInbound.text && state.current_state === "cart:awaiting_quantity") {
+    const navigation = parseSlashCommand(lastInbound.text);
+    if (navigation === "catalog:home" || navigation === "catalog:return") {
+      const command = navigation === "catalog:return" && typeof state.catalogCategoryId === "string"
+        ? `catalog:category:${state.catalogCategoryId}` as const
+        : navigation;
+      const result = await processSlashCommand({
+        command, conversation, lastInboundWaId: lastInbound.waMessageId, profile,
+      });
+      if (result.handled) return;
+    }
+    if (await processPendingProductQuantity({
+      conversation, text: lastInbound.text, lastInboundWaId: lastInbound.waMessageId,
+    })) return;
+  }
 
   // Intercepción directa de Comandos Slash (/start, /menu, /reset, /humano)
   if (lastInbound.text) {
@@ -332,7 +348,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
             productos
               .map(
                 (p) =>
-                  `• ${p.name} (${p.sku}): $${p.price.toLocaleString("es-CL")} CLP (Stock: ${p.stock})`
+                  `${[p.name, p.description].filter(Boolean).join(" — ")} — $${p.price.toLocaleString("es-CL")} CLP (Stock: ${p.stock})`
               )
               .join("\n")
           : `No encontré productos con "${action.query}".`;
@@ -344,19 +360,13 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       await deliverReply(conversation, resText);
       return;
     }
-    case "agregar_al_carrito": {
-      const res = await agregarAlCarrito({
-        organizationId,
-        conversationId,
-        sku: action.sku,
-        cantidad: action.cantidad,
+    case "mostrar_catalogo": {
+      await processSlashCommand({
+        command: "menu:categorias",
+        conversation,
+        lastInboundWaId: lastInbound?.waMessageId,
+        profile,
       });
-      const resText =
-        action.reply ||
-        (res.ok
-          ? `Agregado al carrito: ${res.product.name} (Cantidad: ${action.cantidad})`
-          : `No pude agregar el producto (${res.error}).`);
-      await deliverReply(conversation, resText);
       return;
     }
     case "confirmar_pedido": {
@@ -390,9 +400,13 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
           `¡Pedido confirmado exitosamente! Número de pedido: ${res.order.orderNumber}.`;
         await deliverReply(conversation, resText);
       } else {
-        const resText =
-          action.reply ||
-          `No pude confirmar el pedido porque su carrito está vacío.`;
+        const resText = res.error === "stock_changed"
+          ? `No pude confirmar el pedido porque cambió el stock. Disponibilidad actual: ${res.available}; solicitadas: ${res.requested}.`
+          : res.error === "tenant_limit_exceeded"
+            ? `No pude confirmar el pedido: el máximo permitido es ${res.limit} unidades por producto.`
+            : res.error === "invalid_cart"
+              ? "No pude confirmar el pedido porque el carrito contiene cantidades inválidas."
+              : `No pude confirmar el pedido porque su carrito está vacío.`;
         await deliverReply(conversation, resText);
       }
       return;

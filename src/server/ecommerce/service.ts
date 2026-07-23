@@ -1,4 +1,4 @@
-import { and, eq, ilike, isNull, or, type SQL } from "drizzle-orm";
+import { and, eq, gte, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -6,15 +6,22 @@ import { listCatalogProducts, listCategories } from "@/server/ecommerce/catalog"
 import {
   commitMemoryOrderStock,
   getCatalogCacheMap,
-  updateMemoryCartReservation,
 } from "@/server/ecommerce/cache";
+import { getCommerceSettings } from "@/server/ecommerce/settings";
 
 export interface CartItem {
-  sku: string;
+  productId: string;
   quantity: number;
   unitPrice: number;
   name: string;
+  presentation: string | null;
 }
+
+type LegacyCartItem = Omit<CartItem, "productId" | "presentation"> & {
+  productId?: string;
+  sku?: string;
+  presentation?: string | null;
+};
 
 /**
  * Obtiene las categorías registradas en la organización.
@@ -25,8 +32,23 @@ export async function listarCategorias(organizationId: string) {
 
 export { listCatalogProducts };
 
+export async function getProductForCustomer(organizationId: string, productId: string) {
+  const rows = await getDb().select({
+    id: schema.product.id,
+    name: schema.product.name,
+    description: schema.product.description,
+    price: schema.product.price,
+    stock: schema.product.stock,
+    categoryId: schema.product.categoryId,
+  }).from(schema.product).where(scoped(
+    schema.product.organizationId, organizationId,
+    and(eq(schema.product.id, productId), eq(schema.product.active, true), isNull(schema.product.deletedAt))
+  )).limit(1);
+  return rows[0] ?? null;
+}
+
 /**
- * Busca productos en el catálogo de la organización por nombre, SKU o descripción.
+ * Busca productos por nombre o presentación. El SKU no participa en flujos de cliente.
  */
 export async function buscarProductos(input: {
   organizationId: string;
@@ -43,7 +65,6 @@ export async function buscarProductos(input: {
       if (isAll) return true;
       return (
         p.name.toLowerCase().includes(qClean) ||
-        (p.sku && p.sku.toLowerCase().includes(qClean)) ||
         (p.description && p.description.toLowerCase().includes(qClean))
       );
     });
@@ -51,10 +72,9 @@ export async function buscarProductos(input: {
       .slice(0, 10)
       .map((p) => ({
         id: p.id,
-        sku: p.sku,
         name: p.name,
         price: p.price,
-        stock: Math.max(0, p.stock - (cached.reservedStock.get(p.sku ?? p.id) ?? 0)),
+        stock: p.stock,
         description: p.description,
       }));
   }
@@ -70,7 +90,6 @@ export async function buscarProductos(input: {
     const pattern = `%${qClean}%`;
     const searchOr = or(
       ilike(schema.product.name, pattern),
-      ilike(schema.product.sku, pattern),
       ilike(schema.product.description, pattern)
     );
     if (searchOr && condition) {
@@ -81,7 +100,6 @@ export async function buscarProductos(input: {
   const productos = await db
     .select({
       id: schema.product.id,
-      sku: schema.product.sku,
       name: schema.product.name,
       price: schema.product.price,
       stock: schema.product.stock,
@@ -97,104 +115,68 @@ export async function buscarProductos(input: {
 /**
  * Agrega o incrementa un producto en el carrito activo de la conversación.
  */
-export async function agregarAlCarrito(input: {
+export async function addProductToCart(input: {
   organizationId: string;
   conversationId: string;
-  sku: string;
-  cantidad?: number;
+  productId: string;
+  quantity: number;
 }) {
   const db = getDb();
-  const { organizationId, conversationId, sku, cantidad = 1 } = input;
+  const { organizationId, conversationId, productId, quantity } = input;
+  if (!Number.isSafeInteger(quantity) || quantity <= 0) return { ok: false as const, error: "invalid_quantity" as const };
+  const settings = await getCommerceSettings(organizationId);
 
-  // 1. Validar que el producto exista y esté activo en la organización
-  const prodRows = await db
-    .select()
-    .from(schema.product)
-    .where(
-      scoped(
-        schema.product.organizationId,
-        organizationId,
-        and(eq(schema.product.sku, sku), eq(schema.product.active, true), isNull(schema.product.deletedAt))
-      )
-    )
-    .limit(1);
-
-  const producto = prodRows[0];
-  if (!producto) {
-    return { ok: false as const, error: "producto_no_encontrado" };
-  }
-
-  const cached = getCatalogCacheMap().get(organizationId);
-  if (cached && cached.expiresAt > Date.now()) {
-    const reserved = cached.reservedStock.get(producto.sku ?? producto.id) ?? 0;
-    if (producto.stock - reserved < cantidad) {
-      return { ok: false as const, error: "stock_insuficiente" };
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select ${schema.conversation.id} from ${schema.conversation}
+      where ${schema.conversation.organizationId} = ${organizationId}
+        and ${schema.conversation.id} = ${conversationId} for update`);
+    const products = await tx.select().from(schema.product).where(scoped(
+      schema.product.organizationId, organizationId,
+      and(eq(schema.product.id, productId), eq(schema.product.active, true), isNull(schema.product.deletedAt))
+    )).limit(1);
+    const product = products[0];
+    if (!product) return { ok: false as const, error: "product_not_found" as const };
+    const carts = await tx.select().from(schema.cart).where(scoped(
+      schema.cart.organizationId, organizationId,
+      and(eq(schema.cart.conversationId, conversationId), eq(schema.cart.status, "active"))
+    )).limit(1);
+    let cart = carts[0];
+    if (!cart) {
+      const created = await tx.insert(schema.cart).values({
+        id: newId("cart"), organizationId, conversationId, items: [], status: "active",
+      }).returning();
+      cart = created[0];
     }
-  } else if (producto.stock < cantidad) {
-    return { ok: false as const, error: "stock_insuficiente" };
-  }
+    if (!cart) return { ok: false as const, error: "cart_create_failed" as const };
+    const items = [...((cart.items ?? []) as LegacyCartItem[])];
+    const index = items.findIndex((item) => item.productId === productId);
+    const current = index >= 0 ? items[index]!.quantity : 0;
+    const total = current + quantity;
+    if (total > settings.maxUnitsPerProduct) {
+      return { ok: false as const, error: "tenant_limit_exceeded" as const, limit: settings.maxUnitsPerProduct };
+    }
+    if (total > product.stock) {
+      return { ok: false as const, error: "insufficient_stock" as const, available: product.stock };
+    }
+    const item: CartItem = {
+      productId, quantity: total, unitPrice: product.price, name: product.name,
+      presentation: product.description?.trim() || null,
+    };
+    if (index >= 0) items[index] = item;
+    else items.push(item);
+    const updated = await tx.update(schema.cart).set({ items: items as CartItem[], updatedAt: new Date() })
+      .where(scoped(schema.cart.organizationId, organizationId, eq(schema.cart.id, cart.id))).returning();
+    const stored = updated[0] ?? { ...cart, items };
+    const units = (stored.items as CartItem[]).reduce((sum, entry) => sum + entry.quantity, 0);
+    const totalAmount = (stored.items as CartItem[]).reduce((sum, entry) => sum + entry.quantity * entry.unitPrice, 0);
+    return { ok: true as const, cart: stored, product, units, totalAmount };
+  });
+}
 
-  // 2. Buscar si la conversación tiene un carrito activo
-  const cartRows = await db
-    .select()
-    .from(schema.cart)
-    .where(
-      scoped(
-        schema.cart.organizationId,
-        organizationId,
-        and(
-          eq(schema.cart.conversationId, conversationId),
-          eq(schema.cart.status, "active")
-        )
-      )
-    )
-    .limit(1);
-
-  let carrito = cartRows[0];
-  if (!carrito) {
-    const nuevoId = newId("cart");
-    const insertRows = await db
-      .insert(schema.cart)
-      .values({
-        id: nuevoId,
-        organizationId,
-        conversationId,
-        items: [],
-        status: "active",
-      })
-      .returning();
-    carrito = insertRows[0];
-  }
-
-  if (!carrito) {
-    return { ok: false as const, error: "error_al_crear_carrito" };
-  }
-
-  // 3. Modificar lista de items (JSONB)
-  const items = (carrito.items as CartItem[]) ?? [];
-  const idx = items.findIndex((i) => i.sku === sku);
-  if (idx >= 0 && items[idx]) {
-    items[idx]!.quantity += cantidad;
-  } else {
-    items.push({
-      sku: producto.sku ?? producto.id,
-      name: producto.name,
-      unitPrice: producto.price,
-      quantity: cantidad,
-    });
-  }
-
-  // 4. Guardar carrito
-  const updatedRows = await db
-    .update(schema.cart)
-    .set({ items, updatedAt: new Date() })
-    .where(eq(schema.cart.id, carrito.id))
-    .returning();
-
-  const updatedCart = updatedRows[0] || carrito;
-  updateMemoryCartReservation(organizationId, producto.sku ?? producto.id, cantidad);
-
-  return { ok: true as const, cart: updatedCart, product: producto };
+export async function agregarAlCarrito(input: {
+  organizationId: string; conversationId: string; productId: string; cantidad?: number;
+}) {
+  return addProductToCart({ ...input, quantity: input.cantidad ?? 1 });
 }
 
 /**
@@ -206,64 +188,89 @@ export async function confirmarPedido(input: {
 }) {
   const db = getDb();
   const { organizationId, conversationId } = input;
-
-  // 1. Buscar carrito activo
-  const cartRows = await db
-    .select()
-    .from(schema.cart)
-    .where(
-      scoped(
-        schema.cart.organizationId,
-        organizationId,
-        and(
-          eq(schema.cart.conversationId, conversationId),
-          eq(schema.cart.status, "active")
-        )
-      )
-    )
-    .limit(1);
-
-  const carrito = cartRows[0];
-  if (!carrito || !carrito.items || (carrito.items as CartItem[]).length === 0) {
-    return { ok: false as const, error: "carrito_vacio" };
-  }
-
-  const items = carrito.items as CartItem[];
-  const totalAmount = items.reduce(
-    (acc, item) => acc + item.quantity * item.unitPrice,
-    0
-  );
-
+  const settings = await getCommerceSettings(organizationId);
   const orderNumber = `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
-  const orderId = newId("order");
+  try {
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`select ${schema.conversation.id} from ${schema.conversation}
+        where ${schema.conversation.organizationId} = ${organizationId}
+          and ${schema.conversation.id} = ${conversationId} for update`);
+      const carts = await tx.select().from(schema.cart).where(scoped(
+        schema.cart.organizationId, organizationId,
+        and(eq(schema.cart.conversationId, conversationId), eq(schema.cart.status, "active"))
+      )).limit(1);
+      const cart = carts[0];
+      const rawItems = (cart?.items ?? []) as LegacyCartItem[];
+      if (!cart || rawItems.length === 0) return { ok: false as const, error: "carrito_vacio" as const };
 
-  // 2. Crear pedido
-  const orderRows = await db
-    .insert(schema.order)
-    .values({
-      id: orderId,
-      organizationId,
-      conversationId,
-      cartId: carrito.id,
-      orderNumber,
-      items,
-      totalAmount,
-      status: "confirmed",
-    })
-    .returning();
-
-  const orderObj = orderRows[0];
-  if (!orderObj) {
-    return { ok: false as const, error: "error_al_crear_pedido" };
+      const resolved: CartItem[] = [];
+      for (const item of [...rawItems].sort((a, b) => (a.productId ?? a.sku ?? "").localeCompare(b.productId ?? b.sku ?? ""))) {
+        if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) throw new InvalidCartError();
+        if (item.quantity > settings.maxUnitsPerProduct) throw new CartLimitError(settings.maxUnitsPerProduct);
+        const identity = item.productId
+          ? eq(schema.product.id, item.productId)
+          : item.sku ? eq(schema.product.sku, item.sku) : eq(schema.product.id, "");
+        const initial = await tx.select({ id: schema.product.id }).from(schema.product)
+          .where(scoped(schema.product.organizationId, organizationId, identity)).limit(1);
+        if (!initial[0]) throw new StockChangedError(item.productId ?? "unknown", 0, item.quantity);
+        await tx.execute(sql`select ${schema.product.id} from ${schema.product}
+          where ${schema.product.organizationId} = ${organizationId}
+            and ${schema.product.id} = ${initial[0].id} for update`);
+        const products = await tx.select().from(schema.product).where(scoped(
+          schema.product.organizationId, organizationId,
+          and(eq(schema.product.id, initial[0].id), eq(schema.product.active, true), isNull(schema.product.deletedAt))
+        )).limit(1);
+        const product = products[0];
+        if (!product || product.stock < item.quantity) {
+          throw new StockChangedError(initial[0].id, product?.stock ?? 0, item.quantity);
+        }
+        const decremented = await tx.update(schema.product).set({
+          stock: sql`${schema.product.stock} - ${item.quantity}`, updatedAt: new Date(),
+        }).where(scoped(schema.product.organizationId, organizationId,
+          and(eq(schema.product.id, product.id), gte(schema.product.stock, item.quantity))))
+          .returning({ id: schema.product.id });
+        if (!decremented[0]) throw new StockChangedError(product.id, product.stock, item.quantity);
+        resolved.push({
+          productId: product.id, quantity: item.quantity, unitPrice: product.price,
+          name: product.name, presentation: product.description?.trim() || null,
+        });
+      }
+      const totalAmount = resolved.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+      if (!Number.isSafeInteger(totalAmount) || totalAmount < 0 || totalAmount > 2_147_483_647) {
+        throw new InvalidCartError();
+      }
+      const orders = await tx.insert(schema.order).values({
+        id: newId("order"), organizationId, conversationId, cartId: cart.id,
+        orderNumber, items: resolved, totalAmount, status: "confirmed",
+      }).returning();
+      if (!orders[0]) throw new Error("No se pudo crear el pedido");
+      await tx.update(schema.cart).set({ status: "converted", updatedAt: new Date() })
+        .where(scoped(schema.cart.organizationId, organizationId, eq(schema.cart.id, cart.id)));
+      return { ok: true as const, order: orders[0], items: resolved };
+    });
+    if (!result.ok) return result;
+    commitMemoryOrderStock(organizationId, result.items);
+    return { ok: true as const, order: result.order };
+  } catch (error) {
+    if (error instanceof StockChangedError) {
+      return { ok: false as const, error: "stock_changed" as const,
+        productId: error.productId, available: error.available, requested: error.requested };
+    }
+    if (error instanceof CartLimitError) {
+      return { ok: false as const, error: "tenant_limit_exceeded" as const, limit: error.limit };
+    }
+    if (error instanceof InvalidCartError) return { ok: false as const, error: "invalid_cart" as const };
+    throw error;
   }
+}
 
-  // 3. Convertir carrito
-  await db
-    .update(schema.cart)
-    .set({ status: "converted", updatedAt: new Date() })
-    .where(eq(schema.cart.id, carrito.id));
+class InvalidCartError extends Error {}
+class CartLimitError extends Error {
+  constructor(public limit: number) { super("tenant_limit_exceeded"); }
+}
 
-  commitMemoryOrderStock(organizationId, items);
-
-  return { ok: true as const, order: orderObj };
+class StockChangedError extends Error {
+  constructor(public productId: string, public available: number, public requested: number) {
+    super("stock_changed");
+  }
 }
