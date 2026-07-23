@@ -223,8 +223,7 @@ describe("Telegram Webhook Handler (Paso 1.2)", () => {
 
     // Verificar notificación en tiempo real a la UI (SSE)
     expect(mockPublish).toHaveBeenCalledWith("org_1", expect.objectContaining({ type: "message.new" }));
-    // El menú queda visible como historial, aunque su callback ya fue consumido.
-    expect(mockClearInlineKeyboard).not.toHaveBeenCalled();
+    expect(mockClearInlineKeyboard).toHaveBeenCalledWith(expect.objectContaining({ messageId: 888 }));
   });
 
   it("rechaza un callback de menú antiguo antes de crear un mensaje", async () => {
@@ -243,6 +242,6 @@ describe("Telegram Webhook Handler (Paso 1.2)", () => {
       },
     });
     expect(insertedMessages).toHaveLength(before);
-    expect(mockClearInlineKeyboard).not.toHaveBeenCalled();
+    expect(mockClearInlineKeyboard).toHaveBeenCalledWith(expect.objectContaining({ messageId: 1 }));
   });
 });
