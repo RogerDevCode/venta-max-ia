@@ -15,6 +15,7 @@ const states: Array<[string, string, string]> = [
   ["menu:cart", "viewing_cart", "cart:checkout"],
   ["menu:orders", "viewing_orders", "order:detail:ord_1"],
   ["menu:order_detail", "viewing_order_detail", "order:edit:ord_1"],
+  ["menu:order_merge", "awaiting_merge_confirmation", "order:merge:confirm:ord_1"],
 ];
 
 describe("menu FSM transition table", () => {

@@ -422,10 +422,17 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
           navigationStack: ["menu:main", "menu:orders"],
         });
       } else {
+        if (res.error === "active_order_limit") {
+          await processSlashCommand({
+            command: "cart:checkout",
+            conversation,
+            lastInboundWaId: lastInbound?.waMessageId,
+            profile,
+          });
+          return;
+        }
         const resText = res.error === "stock_changed"
           ? `No pude confirmar el pedido porque cambió el stock. Disponibilidad actual: ${res.available}; solicitadas: ${res.requested}.`
-          : res.error === "active_order_limit"
-            ? `Ya tienes ${res.limit} pedidos activos. Completa o cancela uno antes de confirmar otro.`
           : res.error === "tenant_limit_exceeded"
             ? `No pude confirmar el pedido: el máximo permitido es ${res.limit} unidades por producto.`
             : res.error === "invalid_cart"

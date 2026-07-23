@@ -64,6 +64,7 @@ export async function acceptTelegramMenuCallback(input: {
                     when 'menu:cart' then 'viewing_cart'
                     when 'menu:orders' then 'viewing_orders'
                     when 'menu:order_detail' then 'viewing_order_detail'
+                    when 'menu:order_merge' then 'awaiting_merge_confirmation'
                     when 'cart:awaiting_quantity' then 'awaiting_product_quantity'
                     when 'handoff:humano' then 'awaiting_human'
                     else 'unknown'

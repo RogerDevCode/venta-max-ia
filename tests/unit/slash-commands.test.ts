@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseSlashCommand, processPendingProductQuantity, processSlashCommand } from "@/server/ai/commands";
 
-const { mockUpdateSet, mockSendText, mockSchema, mockDbState, mockApplyHandoff, mockBuscarProductos, mockListarCategorias, mockListCatalogProducts, mockGetProduct, mockAddProduct, mockListActiveOrders, mockGetOrder } = vi.hoisted(() => {
+const { mockUpdateSet, mockSendText, mockSchema, mockDbState, mockApplyHandoff, mockBuscarProductos, mockListarCategorias, mockListCatalogProducts, mockGetProduct, mockAddProduct, mockListActiveOrders, mockGetOrder, mockConfirmOrder, mockMergeOrder } = vi.hoisted(() => {
   const schemaObj = {
     conversation: { id: "id", lastInboundAt: "last_inbound_at", organizationId: "organization_id", stateMetadata: "state_metadata" },
     message: { conversationId: "conversation_id", createdAt: "created_at" },
@@ -20,6 +20,8 @@ const { mockUpdateSet, mockSendText, mockSchema, mockDbState, mockApplyHandoff, 
     mockAddProduct: vi.fn(),
     mockListActiveOrders: vi.fn().mockResolvedValue([]),
     mockGetOrder: vi.fn().mockResolvedValue(null),
+    mockConfirmOrder: vi.fn(),
+    mockMergeOrder: vi.fn(),
     mockSchema: schemaObj,
     mockDbState: {
       conversation: null as Record<string, unknown> | null,
@@ -50,7 +52,8 @@ vi.mock("@/server/ecommerce/service", () => ({
   editOrderAsCart: vi.fn(),
   cancelActiveOrder: vi.fn(),
   clearActiveCart: vi.fn(),
-  confirmarPedido: vi.fn(),
+  confirmarPedido: (...args: unknown[]) => mockConfirmOrder(...args),
+  mergeLatestOrderIntoActiveCart: (...args: unknown[]) => mockMergeOrder(...args),
   ACTIVE_ORDER_STATUSES: ["pending", "confirmed", "processing"],
 }));
 
@@ -106,6 +109,8 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
     mockDbState.orders = [];
     mockListActiveOrders.mockResolvedValue([]);
     mockGetOrder.mockResolvedValue(null);
+    mockConfirmOrder.mockReset();
+    mockMergeOrder.mockReset();
   });
 
   afterEach(() => {
@@ -284,6 +289,41 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       expect(mockAddProduct).toHaveBeenCalledWith(expect.objectContaining({ productId: "prod_1", quantity: 2 }));
       expect(mockSendText).toHaveBeenCalledWith(expect.objectContaining({
         text: expect.stringContaining("Agregamos Coca-Cola — 2 litros, cantidad 2"),
+      }));
+    });
+
+    it("solicita autorización para combinar el cuarto carrito con el pedido más reciente", async () => {
+      mockDbState.conversation!.stateMetadata = {
+        current_state: "menu:cart", active_step: "viewing_cart",
+        menu_stack: ["menu:main", "menu:cart"],
+        numeric_options: ["cart:checkout"],
+      };
+      mockConfirmOrder.mockResolvedValueOnce({
+        ok: false, error: "active_order_limit", limit: 3,
+        candidateOrder: {
+          id: "ord_latest", orderNumber: "ORD-300", totalAmount: 2000,
+          items: [{ productId: "prod_1", name: "Pepsi-Cola", presentation: "2 litros", quantity: 1, unitPrice: 2000 }],
+        },
+        cart: {
+          items: [{ productId: "prod_1", name: "Pepsi-Cola", presentation: "2 litros", quantity: 2, unitPrice: 2000 }],
+        },
+      });
+      await processSlashCommand({
+        command: "cart:checkout", conversation: mockDbState.conversation as never,
+        lastInboundWaId: "tg_12345",
+      });
+      expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
+        stateMetadata: expect.objectContaining({
+          current_state: "menu:order_merge",
+          active_step: "awaiting_merge_confirmation",
+          numeric_options: ["order:merge:confirm:ord_latest", "order:merge:keep"],
+        }),
+      }));
+      expect(mockSendText).toHaveBeenCalledWith(expect.objectContaining({
+        text: expect.stringContaining("pedido N° ORD-300"),
+        replyMarkup: { inline_keyboard: expect.arrayContaining([
+          [expect.objectContaining({ callback_data: "order:merge:confirm:ord_latest" })],
+        ]) },
       }));
     });
 

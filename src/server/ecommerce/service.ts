@@ -226,13 +226,6 @@ export async function confirmarPedido(input: {
       await tx.execute(sql`select ${schema.contact.id} from ${schema.contact}
         where ${schema.contact.organizationId} = ${organizationId}
           and ${schema.contact.id} = ${contactId} for update`);
-      const activeOrderCount = await tx.select({ count: sql<number>`count(*)::int` })
-        .from(schema.order)
-        .where(scoped(schema.order.organizationId, organizationId,
-          and(eq(schema.order.contactId, contactId), inArray(schema.order.status, ACTIVE_ORDER_STATUSES))));
-      if ((activeOrderCount[0]?.count ?? 0) >= MAX_ACTIVE_ORDERS_PER_CONTACT) {
-        return { ok: false as const, error: "active_order_limit" as const, limit: MAX_ACTIVE_ORDERS_PER_CONTACT };
-      }
       const carts = await tx.select().from(schema.cart).where(scoped(
         schema.cart.organizationId, organizationId,
         and(eq(schema.cart.conversationId, conversationId), eq(schema.cart.status, "active"))
@@ -240,6 +233,20 @@ export async function confirmarPedido(input: {
       const cart = carts[0];
       const rawItems = (cart?.items ?? []) as LegacyCartItem[];
       if (!cart || rawItems.length === 0) return { ok: false as const, error: "carrito_vacio" as const };
+      const activeOrders = await tx.select().from(schema.order)
+        .where(scoped(schema.order.organizationId, organizationId,
+          and(eq(schema.order.contactId, contactId), inArray(schema.order.status, ACTIVE_ORDER_STATUSES))))
+        .orderBy(desc(schema.order.createdAt), desc(schema.order.id))
+        .limit(MAX_ACTIVE_ORDERS_PER_CONTACT);
+      if (activeOrders.length >= MAX_ACTIVE_ORDERS_PER_CONTACT) {
+        return {
+          ok: false as const,
+          error: "active_order_limit" as const,
+          limit: MAX_ACTIVE_ORDERS_PER_CONTACT,
+          candidateOrder: activeOrders[0]!,
+          cart,
+        };
+      }
 
       const resolved: CartItem[] = [];
       for (const item of [...rawItems].sort((a, b) => (a.productId ?? a.sku ?? "").localeCompare(b.productId ?? b.sku ?? ""))) {
@@ -369,6 +376,132 @@ async function lockCustomerContext(
     where ${schema.contact.organizationId} = ${organizationId}
       and ${schema.contact.id} = ${contactId} for update`);
   return contactId;
+}
+
+export async function mergeLatestOrderIntoActiveCart(input: {
+  organizationId: string;
+  conversationId: string;
+  candidateOrderId: string;
+}) {
+  const db = getDb();
+  const settings = await getCommerceSettings(input.organizationId);
+  const result = await db.transaction(async (tx) => {
+    const contactId = await lockCustomerContext(tx, input.organizationId, input.conversationId);
+    if (!contactId) return { ok: false as const, error: "merge_candidate_changed" as const };
+    await tx.execute(sql`select ${schema.cart.id} from ${schema.cart}
+      where ${schema.cart.organizationId} = ${input.organizationId}
+        and ${schema.cart.conversationId} = ${input.conversationId}
+        and ${schema.cart.status} = 'active' for update`);
+    const carts = await tx.select().from(schema.cart).where(scoped(
+      schema.cart.organizationId,
+      input.organizationId,
+      and(eq(schema.cart.conversationId, input.conversationId), eq(schema.cart.status, "active"))
+    )).limit(1);
+    const cart = carts[0];
+    if (!cart || ((cart.items ?? []) as CartItem[]).length === 0) {
+      return { ok: false as const, error: "active_cart_missing" as const };
+    }
+
+    await tx.execute(sql`select ${schema.order.id} from ${schema.order}
+      where ${schema.order.organizationId} = ${input.organizationId}
+        and ${schema.order.contactId} = ${contactId}
+        and ${schema.order.status} in ('pending', 'confirmed', 'processing')
+      order by ${schema.order.createdAt} desc, ${schema.order.id} desc for update`);
+    const activeOrders = await tx.select().from(schema.order).where(scoped(
+      schema.order.organizationId,
+      input.organizationId,
+      and(eq(schema.order.contactId, contactId), inArray(schema.order.status, ACTIVE_ORDER_STATUSES))
+    )).orderBy(desc(schema.order.createdAt), desc(schema.order.id)).limit(MAX_ACTIVE_ORDERS_PER_CONTACT);
+    const candidate = activeOrders[0];
+    if (activeOrders.length < MAX_ACTIVE_ORDERS_PER_CONTACT || !candidate || candidate.id !== input.candidateOrderId) {
+      return { ok: false as const, error: "merge_candidate_changed" as const };
+    }
+
+    const orderItems = candidate.items as CartItem[];
+    const cartItems = cart.items as CartItem[];
+    const quantities = new Map<string, { order: number; cart: number }>();
+    for (const [source, items] of [["order", orderItems], ["cart", cartItems]] as const) {
+      for (const item of items) {
+        if (!item.productId || !Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
+          return { ok: false as const, error: "invalid_order_items" as const };
+        }
+        const current = quantities.get(item.productId) ?? { order: 0, cart: 0 };
+        current[source] += item.quantity;
+        quantities.set(item.productId, current);
+      }
+    }
+
+    const mergedItems: CartItem[] = [];
+    for (const productId of [...quantities.keys()].sort()) {
+      const quantity = quantities.get(productId)!;
+      const requested = quantity.order + quantity.cart;
+      if (requested > settings.maxUnitsPerProduct) {
+        return {
+          ok: false as const,
+          error: "merge_limit_exceeded" as const,
+          productId,
+          requested,
+          limit: settings.maxUnitsPerProduct,
+        };
+      }
+      await tx.execute(sql`select ${schema.product.id} from ${schema.product}
+        where ${schema.product.organizationId} = ${input.organizationId}
+          and ${schema.product.id} = ${productId} for update`);
+      const products = await tx.select().from(schema.product).where(scoped(
+        schema.product.organizationId,
+        input.organizationId,
+        and(eq(schema.product.id, productId), eq(schema.product.active, true), isNull(schema.product.deletedAt))
+      )).limit(1);
+      const product = products[0];
+      if (!product) return { ok: false as const, error: "invalid_order_items" as const };
+      const effectiveStock = product.stock + quantity.order;
+      if (requested > effectiveStock) {
+        return {
+          ok: false as const,
+          error: "merge_stock_changed" as const,
+          productId,
+          productName: product.name,
+          available: effectiveStock,
+          requested,
+        };
+      }
+      mergedItems.push({
+        productId,
+        quantity: requested,
+        unitPrice: product.price,
+        name: product.name,
+        presentation: product.description?.trim() || null,
+      });
+    }
+
+    const cancelled = await tx.update(schema.order).set({ status: "cancelled", updatedAt: new Date() })
+      .where(scoped(schema.order.organizationId, input.organizationId,
+        and(
+          eq(schema.order.id, candidate.id),
+          eq(schema.order.contactId, contactId),
+          inArray(schema.order.status, ACTIVE_ORDER_STATUSES)
+        )))
+      .returning({ id: schema.order.id });
+    if (!cancelled[0]) return { ok: false as const, error: "merge_candidate_changed" as const };
+
+    for (const item of orderItems) {
+      await tx.update(schema.product).set({
+        stock: sql`${schema.product.stock} + ${item.quantity}`,
+        updatedAt: new Date(),
+      }).where(scoped(schema.product.organizationId, input.organizationId, eq(schema.product.id, item.productId)));
+    }
+    const updated = await tx.update(schema.cart).set({
+      items: mergedItems,
+      reopenedFromOrderId: candidate.id,
+      updatedAt: new Date(),
+    }).where(scoped(schema.cart.organizationId, input.organizationId,
+      and(eq(schema.cart.id, cart.id), eq(schema.cart.status, "active"))))
+      .returning();
+    if (!updated[0]) throw new Error("Active cart disappeared during order merge");
+    return { ok: true as const, order: { ...candidate, status: "cancelled" as const }, cart: updated[0] };
+  });
+  if (result.ok) invalidateCatalogCache(input.organizationId);
+  return result;
 }
 
 export async function editOrderAsCart(input: {

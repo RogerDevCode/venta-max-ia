@@ -48,6 +48,10 @@ export const MENU_TRANSITIONS: Readonly<Record<string, TransitionRule>> = {
   "menu:order_detail/viewing_order_detail": {
     actionPrefixes: ["order:refresh:", "order:edit:", "order:cancel:"],
   },
+  "menu:order_merge/awaiting_merge_confirmation": {
+    exactActions: ["order:merge:keep"],
+    actionPrefixes: ["order:merge:confirm:"],
+  },
   "handoff:humano/awaiting_human": {},
 };
 
@@ -59,6 +63,7 @@ const DEFAULT_STEPS: Readonly<Record<string, string>> = {
   "menu:cart": "viewing_cart",
   "menu:orders": "viewing_orders",
   "menu:order_detail": "viewing_order_detail",
+  "menu:order_merge": "awaiting_merge_confirmation",
   "cart:awaiting_quantity": "awaiting_product_quantity",
   "handoff:humano": "awaiting_human",
 };

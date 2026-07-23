@@ -17,6 +17,7 @@ import {
   listarCategorias,
   listActiveOrders,
   listCatalogProducts,
+  mergeLatestOrderIntoActiveCart,
 } from "@/server/ecommerce/service";
 import { preloadCatalogCache } from "@/server/ecommerce/cache";
 import { customerProductLabel, parsePositiveInteger } from "@/server/ecommerce/quantity";
@@ -45,7 +46,9 @@ export type SlashCommandType =
   | `order:detail:${string}`
   | `order:refresh:${string}`
   | `order:edit:${string}`
-  | `order:cancel:${string}`;
+  | `order:cancel:${string}`
+  | `order:merge:confirm:${string}`
+  | "order:merge:keep";
 
 /** Parsea un texto entrante o payload de botón callback para detectar comandos y menús. */
 export function parseSlashCommand(text?: string | null): SlashCommandType | null {
@@ -231,6 +234,47 @@ export async function processSlashCommand(input: {
     });
   }
 
+  async function showMergeProposal(input: {
+    candidateOrder: { id: string; orderNumber: string; items: unknown; totalAmount: number };
+    cart: { items: unknown };
+    stack?: string[];
+    prefix?: string;
+  }) {
+    const candidateItems = input.candidateOrder.items as Array<{ name: string; presentation?: string | null; quantity: number }>;
+    const cartItems = input.cart.items as Array<{ name: string; presentation?: string | null; quantity: number }>;
+    const mergeState = enterMenuState(currentState, {
+      currentState: "menu:order_merge",
+      activeStep: "awaiting_merge_confirmation",
+      scope: `order:merge:${input.candidateOrder.id}`,
+      numericOptions: [`order:merge:confirm:${input.candidateOrder.id}`, "order:merge:keep"],
+      stack: input.stack,
+    });
+    await updateState({
+      ...mergeState,
+      mergeCandidateOrderId: input.candidateOrder.id,
+      mergeCandidateOrderNumber: input.candidateOrder.orderNumber,
+    });
+    const orderSummary = candidateItems.map((item) =>
+      `• ${[item.name, item.presentation].filter(Boolean).join(" — ")} x${item.quantity}`
+    ).join("\n");
+    const cartSummary = cartItems.map((item) =>
+      `• ${[item.name, item.presentation].filter(Boolean).join(" — ")} x${item.quantity}`
+    ).join("\n");
+    const rows = [
+      [{ text: "1. ✅ Sí, editar y combinar", callback_data: `order:merge:confirm:${input.candidateOrder.id}` }],
+      [{ text: "2. Mantener mi carrito", callback_data: "order:merge:keep" }],
+      navigationRow,
+    ];
+    const text = `${input.prefix ? `${input.prefix}\n\n` : ""}` +
+      `Ya tienes tres pedidos activos. ¿Deseas editar el pedido N° ${input.candidateOrder.orderNumber} y combinarlo con este carrito?\n\n` +
+      `*Pedido N° ${input.candidateOrder.orderNumber}:*\n${orderSummary}\n\n*Carrito actual:*\n${cartSummary}\n\n` +
+      `1. Sí, editar y combinar\n2. No, mantener mi carrito\n\nI. Inicio · R. Retornar`;
+    await deliverCommandReply(conversation, text, {
+      replyMarkup: isTelegram ? { inline_keyboard: rows } : undefined,
+      channel,
+    });
+  }
+
   if (command.startsWith("catalog:product:")) {
     const productId = command.slice("catalog:product:".length);
     const product = await getProductForCustomer(organizationId, productId);
@@ -334,6 +378,44 @@ export async function processSlashCommand(input: {
     return { handled: true };
   }
 
+  if (command === "order:merge:keep") {
+    await deliverCommandReply(conversation, "Conservamos tu carrito y tus tres pedidos sin cambios.", { channel });
+    const stack = Array.isArray(currentState.menu_stack)
+      ? currentState.menu_stack.filter((entry): entry is string => typeof entry === "string").slice(0, -1)
+      : ["menu:main", "menu:cart"];
+    return processSlashCommand({ ...input, command: "menu:carrito", navigationStack: stack });
+  }
+
+  if (command.startsWith("order:merge:confirm:")) {
+    const candidateOrderId = command.slice("order:merge:confirm:".length);
+    const result = await mergeLatestOrderIntoActiveCart({ organizationId, conversationId, candidateOrderId });
+    const stack = Array.isArray(currentState.menu_stack)
+      ? currentState.menu_stack.filter((entry): entry is string => typeof entry === "string").slice(0, -1)
+      : ["menu:main", "menu:cart"];
+    if (result.ok) {
+      await deliverCommandReply(
+        conversation,
+        `✅ Combinamos el pedido N° ${result.order.orderNumber} con tu carrito. Los productos repetidos quedaron sumados en una sola línea.`,
+        { channel }
+      );
+      return processSlashCommand({ ...input, command: "menu:carrito", navigationStack: stack });
+    }
+    const errorText = result.error === "merge_limit_exceeded"
+      ? `No se pudo combinar: un producto suma ${result.requested} unidades y el máximo es ${result.limit}. Ajusta las cantidades.`
+      : result.error === "merge_stock_changed"
+        ? `No se pudo combinar ${result.productName}: disponibilidad ${result.available}, solicitadas ${result.requested}.`
+        : result.error === "active_cart_missing"
+          ? "El carrito ya no está activo."
+          : result.error === "invalid_order_items"
+            ? "El pedido contiene artículos que no pueden combinarse."
+            : "La cola de pedidos cambió. Prepararé una propuesta actualizada.";
+    await deliverCommandReply(conversation, errorText, { channel });
+    if (result.error === "active_cart_missing") {
+      return processSlashCommand({ ...input, command: "menu:pedidos", navigationStack: ["menu:main"] });
+    }
+    return processSlashCommand({ ...input, command: "cart:checkout", navigationStack: stack });
+  }
+
   const orderCommand = command.match(/^order:(detail|refresh|edit|cancel):(.+)$/);
   if (orderCommand) {
     const action = orderCommand[1];
@@ -427,9 +509,15 @@ export async function processSlashCommand(input: {
   if (command === "cart:checkout") {
     const result = await confirmarPedido({ organizationId, conversationId });
     if (!result.ok) {
-      const text = result.error === "active_order_limit"
-        ? `Ya tienes ${result.limit} pedidos activos. Completa o cancela uno antes de confirmar otro.`
-        : result.error === "stock_changed"
+      if (result.error === "active_order_limit") {
+        await showMergeProposal({
+          candidateOrder: result.candidateOrder,
+          cart: result.cart,
+          stack: input.navigationStack,
+        });
+        return { handled: true };
+      }
+      const text = result.error === "stock_changed"
           ? `Cambió el stock. Disponibilidad actual: ${result.available}; solicitadas: ${result.requested}.`
           : result.error === "tenant_limit_exceeded"
             ? `El máximo permitido es ${result.limit} unidades por producto.`
