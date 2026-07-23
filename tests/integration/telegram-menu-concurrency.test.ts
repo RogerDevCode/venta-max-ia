@@ -21,11 +21,15 @@ const conversationId = newId("conversation");
 const TEST_CHAT_ID = "900000000001";
 let generation = 0;
 
-async function createMenu(status: "active" | "superseded" = "active", fsbState = "menu:main/main_menu") {
+async function createMenu(
+  status: "active" | "superseded" = "active",
+  fsbState = "menu:main/main_menu",
+  allowedActions = ["menu:carrito"]
+) {
   const id = newId("telegramMenu");
   await db.insert(schema.telegramMenuInstance).values({
     id, organizationId, conversationId, chatId: TEST_CHAT_ID, telegramMessageId: 700 + ++generation,
-    generation, fsbState, allowedActions: ["menu:carrito"], status,
+    generation, fsbState, allowedActions, status,
   });
   return { id, messageId: 700 + generation };
 }
@@ -35,7 +39,9 @@ describe.sequential("Telegram menu concurrency with real PostgreSQL", () => {
     await db.insert(schema.organization).values({ id: organizationId, name: "Telegram concurrency test" });
     await db.insert(schema.contact).values({ id: contactId, organizationId, phone: TEST_CHAT_ID, name: "Test" });
     await db.insert(schema.conversation).values({
-      id: conversationId, organizationId, contactId, stateMetadata: { current_state: "menu:main", active_step: "main_menu" },
+      id: conversationId, organizationId, contactId, stateMetadata: {
+        current_state: "menu:main", active_step: "main_menu", numeric_options: ["menu:carrito"],
+      },
     });
   });
 
@@ -74,11 +80,121 @@ describe.sequential("Telegram menu concurrency with real PostgreSQL", () => {
     })).resolves.toEqual({ accepted: false });
   });
 
+  it("rechaza una acción que no pertenece a la tabla FSM del estado vigente", async () => {
+    await db.update(schema.telegramMenuInstance).set({ status: "superseded" })
+      .where(eq(schema.telegramMenuInstance.conversationId, conversationId));
+    await db.update(schema.conversation).set({
+      stateMetadata: {
+        current_state: "menu:main", active_step: "main_menu", numeric_options: ["menu:carrito"],
+      },
+    }).where(eq(schema.conversation.id, conversationId));
+    const poisoned = await createMenu("active", "menu:main/main_menu");
+    await db.update(schema.telegramMenuInstance).set({
+      allowedActions: ["order:cancel:ord_inyectada"],
+    }).where(eq(schema.telegramMenuInstance.id, poisoned.id));
+
+    await expect(acceptTelegramMenuCallback({
+      organizationId,
+      updateId: 20_010,
+      callbackQueryId: "foreign_action",
+      callbackData: encodeMenuCallback(poisoned.id, 0),
+      chatId: TEST_CHAT_ID,
+      fromId: TEST_CHAT_ID,
+      messageId: poisoned.messageId,
+      chatType: "private",
+    })).resolves.toEqual({ accepted: false });
+  });
+
+  it("valida por la API de callbacks cada opción de cada menú y toda la superficie inválida", async () => {
+    const menuCases = [
+      ["menu:main", "main_menu", [
+        "menu:categorias", "menu:promociones", "menu:mas_vendidos",
+        "menu:carrito", "menu:pedidos", "menu:humano",
+      ]],
+      ["menu:catalog", "viewing_catalog", ["catalog:category:cat_1", "catalog:category:cat_2"]],
+      ["menu:catalog", "viewing_category", ["catalog:product:prod_1", "catalog:product:prod_2"]],
+      ["menu:promos", "viewing_promos", ["catalog:product:promo_1", "catalog:product:promo_2"]],
+      ["menu:recommended", "viewing_recommended", ["catalog:product:rec_1", "catalog:product:rec_2"]],
+      ["menu:cart", "viewing_cart", ["cart:checkout", "menu:categorias", "cart:clear"]],
+      ["menu:orders", "viewing_orders", ["order:detail:ord_1", "order:detail:ord_2", "order:detail:ord_3"]],
+      ["menu:order_detail", "viewing_order_detail", [
+        "order:refresh:ord_1", "order:edit:ord_1", "order:cancel:ord_1",
+      ]],
+      ["menu:order_merge", "awaiting_merge_confirmation", [
+        "order:merge:confirm:ord_3", "order:merge:keep",
+      ]],
+    ] as const;
+    let updateId = 30_000;
+
+    for (const [currentState, activeStep, actions] of menuCases) {
+      const navigationActions = currentState === "menu:main" ? ["nav:home"] : ["nav:home", "nav:back"];
+      for (const action of [...actions, ...navigationActions]) {
+        await db.update(schema.telegramMenuInstance).set({ status: "superseded" })
+          .where(eq(schema.telegramMenuInstance.conversationId, conversationId));
+        await db.update(schema.conversation).set({ stateMetadata: {
+          current_state: currentState,
+          active_step: activeStep,
+          numeric_options: [...actions],
+          menu_stack: ["menu:main", `${currentState}:${activeStep}`],
+        } }).where(eq(schema.conversation.id, conversationId));
+        const menu = await createMenu("active", `${currentState}/${activeStep}`, [action]);
+        const decision = await acceptTelegramMenuCallback({
+          organizationId,
+          updateId: ++updateId,
+          callbackQueryId: `matrix_${updateId}`,
+          callbackData: encodeMenuCallback(menu.id, 0),
+          chatId: TEST_CHAT_ID,
+          fromId: TEST_CHAT_ID,
+          messageId: menu.messageId,
+          chatType: "private",
+        });
+        expect(decision.accepted, `${currentState}/${activeStep} rechazó ${action}`).toBe(true);
+        if (decision.accepted) expect(decision.action).toBe(action);
+      }
+    }
+
+    await db.update(schema.telegramMenuInstance).set({ status: "superseded" })
+      .where(eq(schema.telegramMenuInstance.conversationId, conversationId));
+    await db.update(schema.conversation).set({ stateMetadata: {
+      current_state: "menu:main",
+      active_step: "main_menu",
+      numeric_options: ["menu:carrito"],
+      menu_stack: ["menu:main"],
+    } }).where(eq(schema.conversation.id, conversationId));
+    const wireMenu = await createMenu("active", "menu:main/main_menu", ["menu:carrito"]);
+    const base = {
+      organizationId,
+      updateId: ++updateId,
+      callbackQueryId: `wire_${updateId}`,
+      callbackData: encodeMenuCallback(wireMenu.id, 0),
+      chatId: TEST_CHAT_ID,
+      fromId: TEST_CHAT_ID,
+      messageId: wireMenu.messageId,
+      chatType: "private" as const,
+    };
+    const invalidInputs = [
+      { ...base, callbackData: "" },
+      { ...base, callbackData: "menu:carrito" },
+      { ...base, callbackData: encodeMenuCallback(wireMenu.id, 99) },
+      { ...base, chatId: "900000000002" },
+      { ...base, fromId: "900000000002" },
+      { ...base, messageId: wireMenu.messageId + 1 },
+      { ...base, chatType: "group" as const },
+    ];
+    for (const invalid of invalidInputs) {
+      await expect(acceptTelegramMenuCallback({ ...invalid, updateId: ++updateId, callbackQueryId: `wire_${updateId}` }))
+        .resolves.toEqual({ accepted: false });
+    }
+  });
+
   it("rechaza un menú del mismo estado cuando cambió el paso activo", async () => {
     await db.update(schema.telegramMenuInstance).set({ status: "superseded" })
       .where(eq(schema.telegramMenuInstance.conversationId, conversationId));
     await db.update(schema.conversation).set({
-      stateMetadata: { current_state: "menu:catalog", active_step: "viewing_catalog" },
+      stateMetadata: {
+        current_state: "menu:catalog", active_step: "viewing_catalog",
+        numeric_options: ["catalog:category:cat_1"],
+      },
     }).where(eq(schema.conversation.id, conversationId));
     const menu = await createMenu("active", "menu:catalog/viewing_catalog");
     await db.update(schema.conversation).set({
@@ -95,7 +211,9 @@ describe.sequential("Telegram menu concurrency with real PostgreSQL", () => {
       chatType: "private",
     })).resolves.toEqual({ accepted: false });
     await db.update(schema.conversation).set({
-      stateMetadata: { current_state: "menu:main", active_step: "main_menu" },
+      stateMetadata: {
+        current_state: "menu:main", active_step: "main_menu", numeric_options: ["menu:carrito"],
+      },
     }).where(eq(schema.conversation.id, conversationId));
   });
 

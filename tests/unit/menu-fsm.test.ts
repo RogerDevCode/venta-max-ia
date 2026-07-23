@@ -18,7 +18,76 @@ const states: Array<[string, string, string]> = [
   ["menu:order_merge", "awaiting_merge_confirmation", "order:merge:confirm:ord_1"],
 ];
 
+const exhaustiveStates = [
+  ["menu:main", "main_menu", [
+    "menu:categorias", "menu:promociones", "menu:mas_vendidos",
+    "menu:carrito", "menu:pedidos", "menu:humano",
+  ]],
+  ["menu:catalog", "viewing_catalog", ["catalog:category:cat_1", "catalog:category:cat_2"]],
+  ["menu:catalog", "viewing_category", ["catalog:product:prod_1", "catalog:product:prod_2"]],
+  ["menu:promos", "viewing_promos", ["catalog:product:promo_1", "catalog:product:promo_2"]],
+  ["menu:recommended", "viewing_recommended", ["catalog:product:rec_1", "catalog:product:rec_2"]],
+  ["menu:cart", "viewing_cart", ["cart:checkout", "menu:categorias", "cart:clear"]],
+  ["menu:orders", "viewing_orders", ["order:detail:ord_1", "order:detail:ord_2", "order:detail:ord_3"]],
+  ["menu:order_detail", "viewing_order_detail", [
+    "order:refresh:ord_1", "order:edit:ord_1", "order:cancel:ord_1",
+  ]],
+  ["menu:order_merge", "awaiting_merge_confirmation", [
+    "order:merge:confirm:ord_3", "order:merge:keep",
+  ]],
+] as const;
+
 describe("menu FSM transition table", () => {
+  it("recorre cada opción numérica y callback de cada menú sin alterar su relación índice-acción", () => {
+    for (const [currentState, activeStep, actions] of exhaustiveStates) {
+      const state: MenuStateMetadata = {
+        current_state: currentState,
+        active_step: activeStep,
+        menu_stack: ["menu:main", `${currentState}:${activeStep}`],
+        numeric_options: [...actions],
+      };
+      actions.forEach((action, index) => {
+        expect(resolveMenuInput(state, { type: "number", value: index + 1 }), `${currentState} #${index + 1}`)
+          .toEqual({ kind: "action", action });
+        expect(resolveMenuInput(state, { type: "action", action }), `${currentState} callback ${action}`)
+          .toEqual({ kind: "action", action });
+      });
+      for (const invalid of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -1, 0, 1.5, actions.length + 1]) {
+        expect(resolveMenuInput(state, { type: "number", value: invalid }), `${currentState} aceptó ${invalid}`)
+          .toEqual({ kind: "ignore" });
+      }
+    }
+  });
+
+  it("rechaza en cada menú todas las acciones pertenecientes a cualquier otro menú", () => {
+    const universe = [...new Set(exhaustiveStates.flatMap(([, , actions]) => [...actions]))];
+    for (const [currentState, activeStep, actions] of exhaustiveStates) {
+      const state: MenuStateMetadata = {
+        current_state: currentState,
+        active_step: activeStep,
+        numeric_options: [...actions],
+      };
+      for (const foreignAction of universe.filter((action) => !actions.includes(action as never))) {
+        expect(resolveMenuInput(state, { type: "action", action: foreignAction }), `${currentState} aceptó ${foreignAction}`)
+          .toEqual({ kind: "ignore" });
+      }
+    }
+  });
+
+  it("rechaza todas las combinaciones estado/paso inexistentes", () => {
+    for (const [currentState, activeStep, actions] of exhaustiveStates) {
+      const wrongSteps = exhaustiveStates.map(([, step]) => step).filter((step) => step !== activeStep);
+      for (const wrongStep of wrongSteps) {
+        expect(resolveMenuInput({
+          current_state: currentState,
+          active_step: wrongStep,
+          numeric_options: [...actions],
+        }, { type: "action", action: actions[0]! }), `${currentState}/${wrongStep}`)
+          .toEqual({ kind: "ignore" });
+      }
+    }
+  });
+
   it.each(states)("resuelve el número solo contra %s/%s", (currentState, activeStep, action) => {
     const state: MenuStateMetadata = {
       current_state: currentState,

@@ -3,7 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { decodeMenuCallback } from "@/server/telegram/menu-codec";
-import { stateKey } from "@/server/ai/menu-fsm";
+import { resolveMenuInput, stateKey } from "@/server/ai/menu-fsm";
 
 export type MenuCallbackDecision =
   | { accepted: true; action: string; actionId: string }
@@ -42,6 +42,7 @@ export async function acceptTelegramMenuCallback(input: {
     const state = (row?.stateMetadata ?? {}) as Record<string, unknown>;
     const currentStateKey = stateKey(state);
     if (!row || typeof action !== "string" || row.menu.fsbState !== currentStateKey) return { accepted: false };
+    if (resolveMenuInput(state, { type: "action", action }).kind === "ignore") return { accepted: false };
 
     const consumed = await tx.update(schema.telegramMenuInstance).set({ status: "consumed", consumedAt: new Date() })
       .where(scoped(schema.telegramMenuInstance.organizationId, input.organizationId,
