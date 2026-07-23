@@ -13,6 +13,8 @@ const prefixes = {
   credentials: "cred",
   telegramIntegration: "tgi",
   telegramReceipt: "tgr",
+  telegramMenu: "tgm",
+  telegramMenuAction: "tma",
   agentProfile: "agp",
   kbEntry: "kb",
   template: "tpl",

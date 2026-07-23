@@ -1,5 +1,8 @@
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { drainTelegramMenuActions } from "@/server/telegram/menu-action-runner";
+
+const workerGlobal = globalThis as unknown as { __telegramMenuRecoveryTimer?: NodeJS.Timeout };
 
 /**
  * Limpieza al arranque (FR-034): corridas del Laboratorio que quedaron
@@ -26,4 +29,18 @@ export async function cleanupOrphanRuns(): Promise<void> {
     // La BD puede no estar lista aún (migraciones corren antes del server).
     console.error("[boot] limpieza de corridas huérfanas falló:", err);
   }
+}
+
+export async function startTelegramMenuRecovery(): Promise<void> {
+  await drainTelegramMenuActions().catch((error) =>
+    console.error("[boot] recuperación de acciones Telegram falló:", error)
+  );
+  if (workerGlobal.__telegramMenuRecoveryTimer) return;
+  const timer = setInterval(() => {
+    void drainTelegramMenuActions().catch((error) =>
+      console.error("[telegram] recuperación de acciones falló:", error)
+    );
+  }, 5_000);
+  timer.unref();
+  workerGlobal.__telegramMenuRecoveryTimer = timer;
 }

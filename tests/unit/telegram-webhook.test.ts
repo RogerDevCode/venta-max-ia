@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   isValidTelegramWebhookToken,
   processTelegramUpdate,
@@ -8,6 +8,10 @@ import {
 const insertedMessages: Record<string, unknown>[] = [];
 const updatedConversations: Record<string, unknown>[] = [];
 const mockPublish = vi.fn();
+const { mockAcceptMenuCallback, mockRunMenuAction } = vi.hoisted(() => ({
+  mockAcceptMenuCallback: vi.fn().mockResolvedValue({ accepted: true, action: "action_reserve", actionId: "tma_1" }),
+  mockRunMenuAction: vi.fn().mockResolvedValue(true),
+}));
 
 vi.mock("@/server/events/bus", () => ({
   publish: (orgId: string, event: unknown) => mockPublish(orgId, event),
@@ -15,6 +19,18 @@ vi.mock("@/server/events/bus", () => ({
 
 vi.mock("@/server/ai/trigger", () => ({
   maybeRunAgentTurn: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@/server/telegram/credentials", () => ({
+  getTelegramCredentialsByOrg: vi.fn().mockResolvedValue({ token: "tenant-token", status: "connected" }),
+}));
+
+vi.mock("@/server/telegram/menu-guard", () => ({
+  acceptTelegramMenuCallback: (...args: unknown[]) => mockAcceptMenuCallback(...args),
+}));
+
+vi.mock("@/server/telegram/menu-action-runner", () => ({
+  runTelegramMenuAction: (...args: unknown[]) => mockRunMenuAction(...args),
 }));
 
 vi.mock("@/lib/telegram/client", () => ({
@@ -108,6 +124,11 @@ beforeAll(() => {
   process.env.META_WEBHOOK_VERIFY_TOKEN = "verify-test";
 });
 
+beforeEach(() => {
+  mockAcceptMenuCallback.mockResolvedValue({ accepted: true, action: "action_reserve", actionId: "tma_1" });
+  mockRunMenuAction.mockClear();
+});
+
 describe("Telegram Webhook Handler (Paso 1.2)", () => {
   it("valida el token en la ruta contra el secreto configurado", () => {
     expect(isValidTelegramWebhookToken("secret_token_abc", "secret_token_abc")).toBe(true);
@@ -178,7 +199,7 @@ describe("Telegram Webhook Handler (Paso 1.2)", () => {
     expect(insertedMessages.length).toBe(countBefore);
   });
 
-  it("procesa un callback_query (clic en menú) e ingesta el botón elegido como mensaje (Paso 2.2)", async () => {
+  it("acepta un callback vigente y entrega la acción durable al runner", async () => {
     const updateCb: TelegramUpdate = {
       update_id: 1003,
       callback_query: {
@@ -194,7 +215,7 @@ describe("Telegram Webhook Handler (Paso 1.2)", () => {
           chat: { id: 123456789, type: "private" },
           date: 1780000010,
         },
-        data: "action_reserve",
+        data: "m:tgm_0123456789abcdefghij:0",
       },
     };
 
@@ -203,14 +224,26 @@ describe("Telegram Webhook Handler (Paso 1.2)", () => {
       update: updateCb,
     });
 
-    const cbMsg = insertedMessages.find((m) => m.waMessageId === "tg_cb_cb_query_999");
-    expect(cbMsg).toBeDefined();
-    expect(cbMsg!.type).toBe("interactive");
-    expect(cbMsg!.text).toBe("action_reserve");
-    expect(cbMsg!.direction).toBe("in");
+    expect(mockAcceptMenuCallback).toHaveBeenCalledWith(expect.objectContaining({
+      organizationId: "org_1", callbackQueryId: "cb_query_999", messageId: 888,
+    }));
+    expect(mockRunMenuAction).toHaveBeenCalledWith(expect.objectContaining({ actionId: "tma_1" }));
+  });
 
-    // Verificar notificación en tiempo real a la UI (SSE)
-    expect(mockPublish).toHaveBeenCalledWith("org_1", expect.objectContaining({ type: "message.new" }));
+  it("ignora silenciosamente un callback viejo sin ejecutar efectos", async () => {
+    mockAcceptMenuCallback.mockResolvedValueOnce({ accepted: false });
+    await processTelegramUpdate({
+      organizationId: "org_1",
+      update: {
+        update_id: 1004,
+        callback_query: {
+          id: "cb_stale",
+          from: { id: 123456789, is_bot: false, first_name: "Juan" },
+          message: { message_id: 700, chat: { id: 123456789, type: "private" }, date: 1780000020 },
+          data: "m:tgm_0123456789abcdefghij:0",
+        },
+      },
+    });
+    expect(mockRunMenuAction).not.toHaveBeenCalled();
   });
 });
-

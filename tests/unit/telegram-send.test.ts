@@ -22,6 +22,13 @@ vi.mock("@/server/telegram/credentials", () => ({
   getTelegramCredentialsByOrg: vi.fn().mockResolvedValue({ token: "tenant-token", botId: 1, botUsername: "tenant_bot", status: "connected" }),
 }));
 
+vi.mock("@/server/telegram/menu-store", () => ({
+  isInlineKeyboard: () => false,
+  reserveTelegramMenu: vi.fn(),
+  markTelegramMenuFailed: vi.fn(),
+  activateDeliveredTelegramMenu: vi.fn(),
+}));
+
 const selectRows: unknown[][] = [];
 const insertedMessages: Record<string, unknown>[] = [];
 

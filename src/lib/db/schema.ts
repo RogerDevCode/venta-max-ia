@@ -313,6 +313,55 @@ export const telegramWebhookReceipt = pgTable(
   ]
 );
 
+export const telegramMenuInstance = pgTable(
+  "telegram_menu_instance",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id").notNull().references(() => conversation.id, { onDelete: "cascade" }),
+    chatId: text("chat_id").notNull(),
+    telegramMessageId: bigint("telegram_message_id", { mode: "number" }),
+    generation: bigint("generation", { mode: "number" }).notNull(),
+    fsbState: text("fsb_state").notNull(),
+    allowedActions: jsonb("allowed_actions").$type<string[]>().notNull(),
+    status: text("status", { enum: ["pending", "delivered", "active", "consumed", "superseded", "failed"] }).notNull().default("pending"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    deliveredAt: timestamp("delivered_at"),
+    activatedAt: timestamp("activated_at"),
+    consumedAt: timestamp("consumed_at"),
+  },
+  (t) => [
+    uniqueIndex("telegram_menu_org_conv_generation_uq").on(t.organizationId, t.conversationId, t.generation),
+    uniqueIndex("telegram_menu_org_conv_active_uq").on(t.organizationId, t.conversationId).where(sql`${t.status} = 'active'`),
+    index("telegram_menu_org_chat_message_idx").on(t.organizationId, t.chatId, t.telegramMessageId),
+  ]
+);
+
+export const telegramMenuAction = pgTable(
+  "telegram_menu_action",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id").notNull().references(() => conversation.id, { onDelete: "cascade" }),
+    menuInstanceId: text("menu_instance_id").notNull().references(() => telegramMenuInstance.id, { onDelete: "cascade" }),
+    callbackQueryId: text("callback_query_id").notNull(),
+    telegramUpdateId: bigint("telegram_update_id", { mode: "number" }).notNull(),
+    action: text("action").notNull(),
+    status: text("status", { enum: ["pending", "processing", "processed", "failed"] }).notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    availableAt: timestamp("available_at").notNull().defaultNow(),
+    leaseExpiresAt: timestamp("lease_expires_at"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    processedAt: timestamp("processed_at"),
+  },
+  (t) => [
+    uniqueIndex("telegram_menu_action_org_callback_uq").on(t.organizationId, t.callbackQueryId),
+    uniqueIndex("telegram_menu_action_org_instance_uq").on(t.organizationId, t.menuInstanceId),
+    index("telegram_menu_action_org_status_available_idx").on(t.organizationId, t.status, t.availableAt),
+  ]
+);
+
 export const agentProfile = pgTable(
   "agent_profile",
   {

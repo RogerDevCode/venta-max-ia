@@ -12,6 +12,12 @@ import {
 import { isWindowOpen } from "@/server/inbox/window";
 import { serializeMessage } from "@/server/inbox/ingest";
 import { getTelegramCredentialsByOrg } from "@/server/telegram/credentials";
+import {
+  activateDeliveredTelegramMenu,
+  isInlineKeyboard,
+  markTelegramMenuFailed,
+  reserveTelegramMenu,
+} from "@/server/telegram/menu-store";
 
 /** Error tipado del envío; `code` mapea a HTTP en la capa de API. */
 export class SendError extends Error {
@@ -299,16 +305,25 @@ export async function sendTelegramText(input: {
     throw new SendError("not_connected", "Telegram no está conectado para esta organización");
   }
 
+  const menu = isInlineKeyboard(input.replyMarkup)
+    ? await reserveTelegramMenu({
+        organizationId: input.organizationId,
+        conversationId: input.conversationId,
+        chatId: row.contact.phone,
+        markup: input.replyMarkup,
+      })
+    : null;
   let res: { message_id: number };
   try {
     res = await sendMessage({
       chatId: row.contact.phone,
       text: input.text,
       parseMode: input.parseMode,
-      replyMarkup: input.replyMarkup,
+      replyMarkup: menu?.replyMarkup ?? input.replyMarkup,
       token: telegramCredentials.token,
     });
   } catch (err) {
+    if (menu) await markTelegramMenuFailed(input.organizationId, menu.instanceId);
     if (err instanceof TelegramApiError) {
       if (err.isAuthError) {
         throw new SendError(
@@ -322,6 +337,15 @@ export async function sendTelegramText(input: {
       throw new SendError("telegram_error", err.description || err.message);
     }
     throw err;
+  }
+
+  if (menu) {
+    await activateDeliveredTelegramMenu({
+      organizationId: input.organizationId,
+      conversationId: input.conversationId,
+      instanceId: menu.instanceId,
+      telegramMessageId: res.message_id,
+    });
   }
 
   const tgMessageId = `tg_${row.contact.phone}_${res.message_id}`;

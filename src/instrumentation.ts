@@ -5,7 +5,8 @@
  */
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { cleanupOrphanRuns } = await import("./instrumentation-node");
+    const { cleanupOrphanRuns, startTelegramMenuRecovery } = await import("./instrumentation-node");
     await cleanupOrphanRuns();
+    await startTelegramMenuRecovery();
   }
 }

@@ -1,6 +1,9 @@
 import { safeEqual } from "@/server/inbox/webhook";
 import { ingestInboundMessage } from "@/server/inbox/ingest";
 import { answerCallbackQuery, sendChatAction } from "@/lib/telegram/client";
+import { getTelegramCredentialsByOrg } from "@/server/telegram/credentials";
+import { acceptTelegramMenuCallback } from "@/server/telegram/menu-guard";
+import { runTelegramMenuAction } from "@/server/telegram/menu-action-runner";
 
 /**
  * Autenticación e ingesta de actualizaciones de la Telegram Bot API.
@@ -73,23 +76,31 @@ export async function processTelegramUpdate(input: {
       .join(" ")
       .trim() || `Telegram ${chatId}`;
 
-    const cbData = cb.data ?? "[Botón presionado]";
-    const channelMessageId = `tg_cb_${queryId}`;
-
-    // Disparar señal de escritura en T=0ms sin bloquear
-    void sendChatAction({ chatId, action: "typing" }).catch(() => {});
-
-    // Disparar respuesta al callback en segundo plano sin bloquear la ingesta del mensaje
-    void answerCallbackQuery({ callbackQueryId: queryId }).catch(() => {});
-
-    await ingestInboundMessage({
+    const credentials = await getTelegramCredentialsByOrg(organizationId);
+    const ack = answerCallbackQuery({ callbackQueryId: queryId, token: credentials?.token }).catch((error) =>
+      console.error("[telegram] callback ACK falló:", error)
+    );
+    if (!cb.data || !cb.message) {
+      await ack;
+      return;
+    }
+    const decisionPromise = acceptTelegramMenuCallback({
       organizationId,
-      from: chatId,
+      updateId: update.update_id,
+      callbackQueryId: queryId,
+      callbackData: cb.data,
+      chatId,
+      fromId: String(cb.from.id),
+      messageId: cb.message.message_id,
+      chatType: cb.message.chat.type,
+    });
+    const [decision] = await Promise.all([decisionPromise, ack]);
+    if (!decision.accepted) return;
+    await runTelegramMenuAction({
+      organizationId,
+      actionId: decision.actionId,
       profileName,
-      waMessageId: channelMessageId,
-      type: "interactive",
-      text: cbData,
-      timestamp: String(cb.message?.date ?? Math.floor(Date.now() / 1000)),
+      timestamp: String(cb.message.date),
     });
     return;
   }
