@@ -9,7 +9,19 @@ import { sendText } from "@/server/inbox/send";
 export const dynamic = "force-dynamic";
 
 const patchOrderSchema = z.object({
-  status: z.enum(["pending", "confirmed", "processing", "paused", "completed", "cancelled"]).optional(),
+  status: z
+    .enum([
+      "pending",
+      "confirmed",
+      "processing",
+      "pending_shipment",
+      "shipped",
+      "delivered",
+      "paused",
+      "completed",
+      "cancelled",
+    ])
+    .optional(),
   isPaid: z.boolean().optional(),
 });
 
@@ -17,6 +29,9 @@ type Params = { params: Promise<{ id: string }> };
 
 const STATUS_NOTIF_MESSAGES: Record<string, string> = {
   processing: "📦 Tu pedido #{orderNumber} cambió a estado: EN PROCESO.",
+  pending_shipment: "📦 Tu pedido #{orderNumber} está empacado y PENDIENTE DE ENVÍO.",
+  shipped: "🚚 Tu pedido #{orderNumber} ha sido ENVIADO. ¡Va en camino!",
+  delivered: "🎉 Tu pedido #{orderNumber} ha sido ENTREGADO. ¡Gracias por tu compra!",
   paused: "⏸ Tu pedido #{orderNumber} está en PAUSA. Nos comunicaremos contigo pronto.",
   completed: "✅ Tu pedido #{orderNumber} ha sido COMPLETADO. ¡Gracias por tu compra!",
   cancelled: "❌ Tu pedido #{orderNumber} ha sido CANCELADO.",

@@ -9,10 +9,12 @@ import {
   DollarSign,
   Filter,
   MessageSquare,
+  PackageCheck,
   PauseCircle,
   Play,
   RotateCcw,
   ShoppingBag,
+  Truck,
   TrendingUp,
   XCircle,
 } from "lucide-react";
@@ -41,7 +43,16 @@ export type OrderDto = {
   }[];
   totalAmount: number;
   isPaid: boolean;
-  status: "pending" | "confirmed" | "processing" | "paused" | "completed" | "cancelled";
+  status:
+    | "pending"
+    | "confirmed"
+    | "processing"
+    | "pending_shipment"
+    | "shipped"
+    | "delivered"
+    | "paused"
+    | "completed"
+    | "cancelled";
   createdAt: string;
   updatedAt: string;
 };
@@ -49,8 +60,10 @@ export type OrderDto = {
 const COLUMNS = [
   { id: "pending", label: "Pendientes", badgeBg: "bg-amber-500/15 text-amber-600 dark:text-amber-400" },
   { id: "processing", label: "En Proceso", badgeBg: "bg-blue-500/15 text-blue-600 dark:text-blue-400" },
+  { id: "pending_shipment", label: "Pendiente Envío", badgeBg: "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400" },
+  { id: "shipped", label: "Enviado", badgeBg: "bg-cyan-500/15 text-cyan-600 dark:text-cyan-400" },
+  { id: "delivered", label: "Entregado", badgeBg: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" },
   { id: "paused", label: "En Pausa", badgeBg: "bg-purple-500/15 text-purple-600 dark:text-purple-400" },
-  { id: "completed", label: "Completados", badgeBg: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" },
   { id: "cancelled", label: "Cancelados", badgeBg: "bg-rose-500/15 text-rose-600 dark:text-rose-400" },
 ] as const;
 
@@ -125,7 +138,8 @@ export function OrdersClient() {
     // Filtro por estado
     if (statusFilter !== "all") {
       if (statusFilter === "pending" && o.status !== "pending" && o.status !== "confirmed") return false;
-      if (statusFilter !== "pending" && o.status !== statusFilter) return false;
+      if (statusFilter === "delivered" && o.status !== "delivered" && o.status !== "completed") return false;
+      if (statusFilter !== "pending" && statusFilter !== "delivered" && o.status !== statusFilter) return false;
     }
     // Filtro por texto
     if (!filterQuery) return true;
@@ -139,8 +153,8 @@ export function OrdersClient() {
 
   // Métricas de primer vistazo
   const pendingCount = orders?.filter((o) => o.status === "pending" || o.status === "confirmed").length ?? 0;
-  const processingCount = orders?.filter((o) => o.status === "processing").length ?? 0;
-  const completedOrders = orders?.filter((o) => o.status === "completed") ?? [];
+  const processingCount = orders?.filter((o) => o.status === "processing" || o.status === "pending_shipment" || o.status === "shipped").length ?? 0;
+  const completedOrders = orders?.filter((o) => o.status === "delivered" || o.status === "completed") ?? [];
   const totalSales = completedOrders.reduce((sum, o) => sum + o.totalAmount, 0);
   const avgTicket = completedOrders.length > 0 ? totalSales / completedOrders.length : 0;
 
@@ -153,9 +167,9 @@ export function OrdersClient() {
             <ShoppingBag className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-lg font-bold tracking-tight">Gestión de Pedidos</h2>
+            <h2 className="text-lg font-bold tracking-tight">Gestión de Pedidos y Envíos</h2>
             <p className="text-xs text-text-3">
-              Cola de pedidos recibidos por Telegram para atención y cierre de operaciones
+              Cola de pedidos recibidos por Telegram para atención, empaque, envío y entrega
             </p>
           </div>
         </div>
@@ -170,11 +184,13 @@ export function OrdersClient() {
               className="bg-transparent font-medium focus:outline-none"
             >
               <option value="all">Todos los estados</option>
-              <option value="pending">Solo Pendientes</option>
-              <option value="processing">Solo En Proceso</option>
-              <option value="paused">Solo En Pausa</option>
-              <option value="completed">Solo Completados</option>
-              <option value="cancelled">Solo Cancelados</option>
+              <option value="pending">Pendientes</option>
+              <option value="processing">En Proceso</option>
+              <option value="pending_shipment">Pendiente Envío</option>
+              <option value="shipped">Enviados</option>
+              <option value="delivered">Entregados</option>
+              <option value="paused">En Pausa</option>
+              <option value="cancelled">Cancelados</option>
             </select>
           </div>
 
@@ -205,10 +221,10 @@ export function OrdersClient() {
 
         <div className="flex items-center gap-3 rounded-lg border bg-background p-3 shadow-2xs">
           <div className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-500/10 text-blue-600">
-            <Play className="h-4 w-4" />
+            <Truck className="h-4 w-4" />
           </div>
           <div>
-            <p className="text-[11px] font-medium text-text-3">En Proceso</p>
+            <p className="text-[11px] font-medium text-text-3">En Proceso / Envío</p>
             <p className="text-base font-bold text-foreground">{processingCount}</p>
           </div>
         </div>
@@ -218,7 +234,7 @@ export function OrdersClient() {
             <DollarSign className="h-4 w-4" />
           </div>
           <div>
-            <p className="text-[11px] font-medium text-text-3">Total Ventas Completadas</p>
+            <p className="text-[11px] font-medium text-text-3">Total Ventas Entregadas</p>
             <p className="text-base font-bold text-foreground">{formatCurrency(totalSales)}</p>
           </div>
         </div>
@@ -241,14 +257,16 @@ export function OrdersClient() {
             Cargando cola de pedidos…
           </div>
         ) : (
-          <div className="flex h-full min-w-[1200px] gap-4">
+          <div className="flex h-full min-w-[1400px] gap-3.5">
             {COLUMNS.filter((col) => {
               if (statusFilter === "all") return true;
               if (statusFilter === "pending") return col.id === "pending";
+              if (statusFilter === "delivered") return col.id === "delivered";
               return col.id === statusFilter;
             }).map((col) => {
               const colOrders = filtered.filter((o) => {
                 if (col.id === "pending") return o.status === "pending" || o.status === "confirmed";
+                if (col.id === "delivered") return o.status === "delivered" || o.status === "completed";
                 return o.status === col.id;
               });
 
@@ -349,7 +367,7 @@ export function OrdersClient() {
 
                           {/* Acciones */}
                           <div className="mt-3 flex flex-col gap-2 pt-1">
-                            <div className="flex gap-1.5">
+                            <div className="flex flex-wrap gap-1.5">
                               {(order.status === "pending" || order.status === "confirmed") && (
                                 <>
                                   <Button
@@ -375,11 +393,53 @@ export function OrdersClient() {
                                 <>
                                   <Button
                                     size="xs"
+                                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white"
+                                    disabled={updatingId === order.id}
+                                    onClick={() => void updateStatus(order.id, "pending_shipment")}
+                                  >
+                                    <PackageCheck className="mr-1 h-3 w-3" /> Empacado
+                                  </Button>
+                                  <Button
+                                    size="xs"
+                                    className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white"
+                                    disabled={updatingId === order.id}
+                                    onClick={() => void updateStatus(order.id, "shipped")}
+                                  >
+                                    <Truck className="mr-1 h-3 w-3" /> Enviar
+                                  </Button>
+                                </>
+                              )}
+
+                              {order.status === "pending_shipment" && (
+                                <>
+                                  <Button
+                                    size="xs"
+                                    className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white"
+                                    disabled={updatingId === order.id}
+                                    onClick={() => void updateStatus(order.id, "shipped")}
+                                  >
+                                    <Truck className="mr-1 h-3 w-3" /> Marcar Enviado
+                                  </Button>
+                                  <Button
+                                    size="xs"
+                                    variant="outline"
+                                    disabled={updatingId === order.id}
+                                    onClick={() => void updateStatus(order.id, "paused")}
+                                  >
+                                    <PauseCircle className="mr-1 h-3 w-3" /> Pausar
+                                  </Button>
+                                </>
+                              )}
+
+                              {order.status === "shipped" && (
+                                <>
+                                  <Button
+                                    size="xs"
                                     className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
                                     disabled={updatingId === order.id}
-                                    onClick={() => void updateStatus(order.id, "completed")}
+                                    onClick={() => void updateStatus(order.id, "delivered")}
                                   >
-                                    <CheckCircle2 className="mr-1 h-3 w-3" /> Completar
+                                    <CheckCircle2 className="mr-1 h-3 w-3" /> Marcar Entregado
                                   </Button>
                                   <Button
                                     size="xs"
@@ -414,7 +474,7 @@ export function OrdersClient() {
                                 </>
                               )}
 
-                              {(order.status === "completed" || order.status === "cancelled") && (
+                              {(order.status === "delivered" || order.status === "completed" || order.status === "cancelled") && (
                                 <Button
                                   size="xs"
                                   variant="outline"

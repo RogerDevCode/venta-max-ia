@@ -29,7 +29,7 @@ type LegacyCartItem = Omit<CartItem, "productId" | "presentation"> & {
 };
 
 type OrderStatus = typeof schema.order.$inferSelect.status;
-export const ACTIVE_ORDER_STATUSES: OrderStatus[] = ["pending", "confirmed", "processing"];
+export const ACTIVE_ORDER_STATUSES: OrderStatus[] = ["pending", "confirmed", "processing", "pending_shipment", "shipped", "paused"];
 export const MAX_ACTIVE_ORDERS_PER_CONTACT = 3;
 
 /**
