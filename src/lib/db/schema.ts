@@ -641,7 +641,7 @@ export const order = pgTable(
       .default([]),
     totalAmount: integer("total_amount").notNull().default(0),
     status: text("status", {
-      enum: ["pending", "confirmed", "processing", "completed", "cancelled"],
+      enum: ["pending", "confirmed", "processing", "paused", "completed", "cancelled"],
     })
       .notNull()
       .default("pending"),

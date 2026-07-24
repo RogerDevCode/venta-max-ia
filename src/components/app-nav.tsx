@@ -9,6 +9,7 @@ import {
   Kanban,
   LogOut,
   Settings,
+  ShoppingBag,
   Sparkles,
   Users,
 } from "lucide-react";
@@ -19,6 +20,7 @@ import { useEvents } from "@/components/use-events";
 
 const NAV = [
   { href: "/inbox", label: "Bandeja", icon: Inbox, badge: true },
+  { href: "/orders", label: "Pedidos", icon: ShoppingBag },
   { href: "/pipeline", label: "Pipeline", icon: Kanban },
   { href: "/contacts", label: "Contactos", icon: Users },
   { href: "/agent", label: "Agente", icon: Sparkles },

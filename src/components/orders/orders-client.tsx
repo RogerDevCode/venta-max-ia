@@ -1,0 +1,336 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import {
+  CheckCircle2,
+  Clock,
+  MessageSquare,
+  PauseCircle,
+  Play,
+  RotateCcw,
+  ShoppingBag,
+  XCircle,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { ContactAvatar } from "@/components/avatar";
+import { Button } from "@/components/ui/button";
+import { useEvents } from "@/components/use-events";
+
+export type OrderDto = {
+  id: string;
+  orderNumber: string;
+  contactId: string;
+  conversationId: string | null;
+  contact: {
+    id: string;
+    name: string;
+    channel: string;
+    externalAddress: string;
+  };
+  items: {
+    productId: string;
+    quantity: number;
+    unitPrice: number;
+    name: string;
+    presentation: string | null;
+  }[];
+  totalAmount: number;
+  status: "pending" | "confirmed" | "processing" | "paused" | "completed" | "cancelled";
+  createdAt: string;
+  updatedAt: string;
+};
+
+const COLUMNS = [
+  { id: "pending", label: "Pendientes", badgeBg: "bg-amber-500/15 text-amber-600 dark:text-amber-400" },
+  { id: "processing", label: "En Proceso", badgeBg: "bg-blue-500/15 text-blue-600 dark:text-blue-400" },
+  { id: "paused", label: "En Pausa", badgeBg: "bg-purple-500/15 text-purple-600 dark:text-purple-400" },
+  { id: "completed", label: "Completados", badgeBg: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" },
+  { id: "cancelled", label: "Cancelados", badgeBg: "bg-rose-500/15 text-rose-600 dark:text-rose-400" },
+] as const;
+
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(amount);
+}
+
+function timeAgo(iso: string) {
+  const date = new Date(iso);
+  const now = new Date();
+  const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
+  if (diffSec < 60) return "hace un momento";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `hace ${diffMin} min`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `hace ${diffHours} h`;
+  return date.toLocaleDateString("es-MX", { day: "numeric", month: "short" });
+}
+
+export function OrdersClient() {
+  const [orders, setOrders] = useState<OrderDto[] | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [filterQuery, setFilterQuery] = useState("");
+
+  const refetch = useCallback(async () => {
+    const res = await fetch("/api/orders").catch(() => null);
+    if (!res?.ok) return;
+    const data = (await res.json()) as { orders: OrderDto[] };
+    setOrders(data.orders);
+  }, []);
+
+  useEffect(() => {
+    void refetch();
+  }, [refetch]);
+
+  useEvents({
+    onConversationUpdated: () => void refetch(),
+    onMessageNew: () => void refetch(),
+  });
+
+  async function updateStatus(orderId: string, status: OrderDto["status"]) {
+    setUpdatingId(orderId);
+    // Optimista
+    setOrders((prev) =>
+      prev ? prev.map((o) => (o.id === orderId ? { ...o, status } : o)) : null
+    );
+    await fetch(`/api/orders/${orderId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status }),
+    }).catch(() => null);
+    setUpdatingId(null);
+    void refetch();
+  }
+
+  const filtered = orders?.filter((o) => {
+    if (!filterQuery) return true;
+    const q = filterQuery.toLowerCase();
+    return (
+      o.orderNumber.toLowerCase().includes(q) ||
+      o.contact.name.toLowerCase().includes(q) ||
+      o.items.some((i) => i.name.toLowerCase().includes(q))
+    );
+  }) ?? [];
+
+  return (
+    <div className="flex h-full flex-col">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b bg-background/80 backdrop-blur-sm px-6 py-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand/10 text-brand">
+            <ShoppingBag className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold tracking-tight">Gestión de Pedidos</h2>
+            <p className="text-xs text-text-3">
+              Cola de pedidos recibidos por Telegram para atención y cierre de operaciones
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            placeholder="Buscar por #pedido, cliente o producto…"
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            className="h-9 w-64 rounded-md border border-input bg-background px-3 text-xs focus:border-brand focus:outline-none"
+          />
+          <Button variant="outline" size="sm" onClick={() => void refetch()}>
+            Actualizar
+          </Button>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-x-auto p-6">
+        {orders === null ? (
+          <div className="flex h-64 items-center justify-center text-sm text-text-3">
+            Cargando cola de pedidos…
+          </div>
+        ) : (
+          <div className="flex h-full min-w-[1200px] gap-4">
+            {COLUMNS.map((col) => {
+              const colOrders = filtered.filter((o) => {
+                if (col.id === "pending") return o.status === "pending" || o.status === "confirmed";
+                return o.status === col.id;
+              });
+
+              return (
+                <div
+                  key={col.id}
+                  className="flex flex-1 flex-col rounded-xl border bg-subtle/40 p-3 shadow-xs"
+                >
+                  <div className="mb-3 flex items-center justify-between px-1">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-text-2">
+                      {col.label}
+                    </h3>
+                    <span
+                      className={cn(
+                        "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold",
+                        col.badgeBg
+                      )}
+                    >
+                      {colOrders.length}
+                    </span>
+                  </div>
+
+                  <div className="flex-1 space-y-3 overflow-y-auto pr-0.5">
+                    {colOrders.length === 0 ? (
+                      <div className="flex h-32 items-center justify-center rounded-lg border border-dashed text-xs text-text-4">
+                        Sin pedidos
+                      </div>
+                    ) : (
+                      colOrders.map((order) => (
+                        <div
+                          key={order.id}
+                          className="group relative rounded-lg border bg-background p-4 shadow-sm transition-all hover:shadow-md"
+                        >
+                          {/* Encabezado pedido */}
+                          <div className="flex items-center justify-between border-b pb-2.5">
+                            <span className="font-mono text-xs font-bold text-brand">
+                              #{order.orderNumber}
+                            </span>
+                            <span className="flex items-center gap-1 text-[11px] text-text-4">
+                              <Clock className="h-3 w-3" />
+                              {timeAgo(order.createdAt)}
+                            </span>
+                          </div>
+
+                          {/* Cliente */}
+                          <div className="my-3 flex items-center gap-2.5">
+                            <ContactAvatar
+                              name={order.contact.name}
+                              seed={order.contact.id}
+                              size="sm"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-xs font-semibold">
+                                {order.contact.name}
+                              </p>
+                              <p className="text-[10.5px] text-text-3">
+                                Telegram: {order.contact.externalAddress}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Productos */}
+                          <div className="my-2.5 space-y-1 rounded-md bg-secondary/50 p-2.5 text-xs">
+                            {order.items.map((item, idx) => (
+                              <div key={idx} className="flex justify-between gap-2">
+                                <span className="truncate text-text-2">
+                                  {item.quantity}x {item.name}{" "}
+                                  {item.presentation ? `(${item.presentation})` : ""}
+                                </span>
+                                <span className="font-medium text-foreground">
+                                  {formatCurrency(item.unitPrice * item.quantity)}
+                                </span>
+                              </div>
+                            ))}
+                            <div className="mt-2 flex justify-between border-t pt-1.5 font-bold">
+                              <span>Total</span>
+                              <span className="text-brand">
+                                {formatCurrency(order.totalAmount)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Acciones */}
+                          <div className="mt-3 flex flex-col gap-2 pt-1">
+                            <div className="flex gap-1.5">
+                              {(order.status === "pending" || order.status === "confirmed") && (
+                                <>
+                                  <Button
+                                    size="xs"
+                                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                                    disabled={updatingId === order.id}
+                                    onClick={() => void updateStatus(order.id, "processing")}
+                                  >
+                                    <Play className="mr-1 h-3 w-3" /> Procesar
+                                  </Button>
+                                  <Button
+                                    size="xs"
+                                    variant="outline"
+                                    disabled={updatingId === order.id}
+                                    onClick={() => void updateStatus(order.id, "paused")}
+                                  >
+                                    <PauseCircle className="mr-1 h-3 w-3" /> Pausar
+                                  </Button>
+                                </>
+                              )}
+
+                              {order.status === "processing" && (
+                                <>
+                                  <Button
+                                    size="xs"
+                                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                    disabled={updatingId === order.id}
+                                    onClick={() => void updateStatus(order.id, "completed")}
+                                  >
+                                    <CheckCircle2 className="mr-1 h-3 w-3" /> Completar
+                                  </Button>
+                                  <Button
+                                    size="xs"
+                                    variant="outline"
+                                    disabled={updatingId === order.id}
+                                    onClick={() => void updateStatus(order.id, "paused")}
+                                  >
+                                    <PauseCircle className="mr-1 h-3 w-3" /> Pausar
+                                  </Button>
+                                </>
+                              )}
+
+                              {order.status === "paused" && (
+                                <>
+                                  <Button
+                                    size="xs"
+                                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                                    disabled={updatingId === order.id}
+                                    onClick={() => void updateStatus(order.id, "processing")}
+                                  >
+                                    <Play className="mr-1 h-3 w-3" /> Reanudar
+                                  </Button>
+                                  <Button
+                                    size="xs"
+                                    variant="outline"
+                                    className="text-rose-600 border-rose-200 hover:bg-rose-50"
+                                    disabled={updatingId === order.id}
+                                    onClick={() => void updateStatus(order.id, "cancelled")}
+                                  >
+                                    <XCircle className="mr-1 h-3 w-3" /> Cancelar
+                                  </Button>
+                                </>
+                              )}
+
+                              {(order.status === "completed" || order.status === "cancelled") && (
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  className="w-full"
+                                  disabled={updatingId === order.id}
+                                  onClick={() => void updateStatus(order.id, "processing")}
+                                >
+                                  <RotateCcw className="mr-1 h-3 w-3" /> Reabrir pedido
+                                </Button>
+                              )}
+                            </div>
+
+                            {/* Enlace directo a la bandeja */}
+                            <Link
+                              href={`/inbox?contact=${order.contact.id}`}
+                              className="flex items-center justify-center gap-1.5 rounded-md border border-brand/20 bg-brand-tint/60 py-1 text-xs font-medium text-brand-text hover:bg-brand-tint transition-colors"
+                            >
+                              <MessageSquare className="h-3.5 w-3.5" />
+                              Contactar en Bandeja
+                            </Link>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

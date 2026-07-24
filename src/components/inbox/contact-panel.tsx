@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Check, ChevronRight, Sparkles, Trash2, UserRound } from "lucide-react";
+import { Check, ChevronRight, ShoppingBag, Sparkles, Trash2, UserRound } from "lucide-react";
 import type { ConversationDto, StageDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
@@ -41,8 +41,14 @@ export function ContactPanel({
   const [stages, setStages] = useState<StageDto[]>([]);
   const [currentStageId, setCurrentStageId] = useState<string | null>(null);
   const [leadId, setLeadId] = useState<string | null>(null);
-  // Estado global del agente: sin esto, el toggle "Respondiendo" mentiría
-  // cuando el agente aún no se ha configurado/encendido.
+  const [contactOrders, setContactOrders] = useState<{
+    id: string;
+    orderNumber: string;
+    totalAmount: number;
+    status: string;
+    items: { productId: string; quantity: number; unitPrice: number; name: string }[];
+  }[]>([]);
+  // Estado global del agente
   const [agentEnabled, setAgentEnabled] = useState(false);
   const [aiConfigured, setAiConfigured] = useState(false);
 
@@ -52,34 +58,41 @@ export function ContactPanel({
   const aiActive =
     agentReady && conversation.aiEnabled && !conversation.handoffAt;
 
-  // Carga inicial (incluye notas): se re-ejecuta al cambiar de contacto.
+  // Carga inicial: se re-ejecuta al cambiar de contacto.
   const refetch = useCallback(async () => {
-    const [detail, stagesRes, agentRes] = await Promise.all([
+    const [detail, stagesRes, agentRes, ordersRes] = await Promise.all([
       fetch(`/api/contacts/${contactId}`).then((r) => (r.ok ? r.json() : null)),
       fetch("/api/pipeline/stages").then((r) => (r.ok ? r.json() : null)),
       fetch("/api/agent/profile").then((r) => (r.ok ? r.json() : null)),
-    ]).catch(() => [null, null, null]);
+      fetch("/api/orders").then((r) => (r.ok ? r.json() : null)),
+    ]).catch(() => [null, null, null, null]);
     if (detail) {
       setNotes(detail.contact?.notes ?? "");
       setCurrentStageId(detail.stage?.id ?? null);
       setLeadId(detail.lead?.id ?? null);
     }
     if (stagesRes) setStages(stagesRes.stages);
+    if (ordersRes?.orders) {
+      setContactOrders(ordersRes.orders.filter((o: { contactId: string }) => o.contactId === contactId));
+    }
     setAgentEnabled(Boolean(agentRes?.profile?.enabled));
     setAiConfigured(Boolean(agentRes?.aiConfigured));
     setNotesLoaded(true);
   }, [contactId]);
 
-  // Refetch en vivo (etapa/lead + estado del agente) SIN tocar las notas, para
-  // no pisar lo que el operador esté escribiendo. Lo dispara el SSE.
+  // Refetch en vivo (etapa/lead/pedidos + estado del agente)
   const refreshLive = useCallback(async () => {
-    const [detail, agentRes] = await Promise.all([
+    const [detail, agentRes, ordersRes] = await Promise.all([
       fetch(`/api/contacts/${contactId}`).then((r) => (r.ok ? r.json() : null)),
       fetch("/api/agent/profile").then((r) => (r.ok ? r.json() : null)),
-    ]).catch(() => [null, null]);
+      fetch("/api/orders").then((r) => (r.ok ? r.json() : null)),
+    ]).catch(() => [null, null, null]);
     if (detail) {
       setCurrentStageId(detail.stage?.id ?? null);
       setLeadId(detail.lead?.id ?? null);
+    }
+    if (ordersRes?.orders) {
+      setContactOrders(ordersRes.orders.filter((o: { contactId: string }) => o.contactId === contactId));
     }
     if (agentRes) {
       setAgentEnabled(Boolean(agentRes.profile?.enabled));
@@ -237,6 +250,48 @@ export function ContactPanel({
               </div>
             )}
           </div>
+        </section>
+
+        {/* Pedidos del cliente */}
+        <section className="border-b p-4">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-text-3 flex items-center gap-1.5">
+              <ShoppingBag className="h-3.5 w-3.5 text-brand" /> Pedidos del cliente ({contactOrders.length})
+            </p>
+            <Link
+              href="/orders"
+              className="text-[11px] font-medium text-brand hover:underline"
+            >
+              Ver cola →
+            </Link>
+          </div>
+          {contactOrders.length === 0 ? (
+            <p className="text-xs text-text-4 italic">Sin pedidos registrados</p>
+          ) : (
+            <div className="space-y-2">
+              {contactOrders.map((ord) => (
+                <div key={ord.id} className="rounded-md border bg-secondary/30 p-2.5 text-xs">
+                  <div className="flex justify-between font-mono font-bold text-brand mb-1">
+                    <span>#{ord.orderNumber}</span>
+                    <span className="uppercase text-[10px] px-1.5 py-0.5 rounded bg-brand/10">
+                      {ord.status}
+                    </span>
+                  </div>
+                  <div className="text-text-3 space-y-0.5 mb-1.5">
+                    {ord.items.map((it, idx) => (
+                      <div key={idx} className="truncate">
+                        {it.quantity}x {it.name}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between border-t pt-1 font-semibold">
+                    <span>Total:</span>
+                    <span>${(ord.totalAmount / 100).toFixed(2)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Stepper de etapa */}
