@@ -53,3 +53,26 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
     throw err;
   }
 });
+
+export const DELETE = withAuth(async (session, req: Request, ctx: Params) => {
+  const { id } = await ctx.params;
+  const row = await getConversation(session.organizationId, id);
+  if (!row) return apiError(404, "not_found", "Conversación no encontrada");
+
+  const { clearConversationMessages } = await import("@/server/inbox/queries");
+  const { publish } = await import("@/server/events/bus");
+
+  const result = await clearConversationMessages(session.organizationId, id);
+
+  const freshRow = await getConversation(session.organizationId, id);
+  if (freshRow) {
+    const { serializeConversation } = await import("@/server/inbox/queries");
+    const dto = serializeConversation(freshRow.conversation, freshRow.contact);
+    publish(session.organizationId, {
+      type: "conversation.updated",
+      data: { conversation: dto },
+    });
+  }
+
+  return Response.json({ ok: true, clearedCount: result.clearedCount });
+});

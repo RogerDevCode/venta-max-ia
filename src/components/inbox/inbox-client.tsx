@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { PanelRight } from "lucide-react";
+import { PanelRight, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import type { ConversationDto, MessageDto } from "@/lib/types";
@@ -156,6 +156,19 @@ export function InboxClient() {
     [refetchConversations]
   );
 
+  const clearConversation = useCallback(async () => {
+    if (!selectedIdRef.current) return;
+    const res = await fetch(
+      `/api/conversations/${selectedIdRef.current}/messages`,
+      { method: "DELETE" }
+    ).catch(() => null);
+    if (res?.ok) {
+      setMessages([]);
+      void refetchConversations();
+      setDetailRev((v) => v + 1);
+    }
+  }, [refetchConversations]);
+
   return (
     <div className="flex h-full">
       <section className="w-[360px] shrink-0 overflow-hidden border-r">
@@ -194,15 +207,30 @@ export function InboxClient() {
                   </p>
                 </div>
               </div>
-              {!panelOpen && (
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => togglePanel(true)}
-                  aria-label="Mostrar detalles"
-                  className="rounded-sm border p-1.5 text-text-3 hover:bg-accent hover:text-foreground"
+                  onClick={() => {
+                    if (confirm("¿Estás seguro de limpiar todos los mensajes de esta conversación en la BD?")) {
+                      void clearConversation();
+                    }
+                  }}
+                  title="Limpiar conversación (mensajes y BD)"
+                  aria-label="Limpiar conversación"
+                  className="flex items-center gap-1.5 rounded-md border border-destructive/30 px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
                 >
-                  <PanelRight className="h-4 w-4" strokeWidth={1.7} />
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Limpiar chat</span>
                 </button>
-              )}
+                {!panelOpen && (
+                  <button
+                    onClick={() => togglePanel(true)}
+                    aria-label="Mostrar detalles"
+                    className="rounded-sm border p-1.5 text-text-3 hover:bg-accent hover:text-foreground"
+                  >
+                    <PanelRight className="h-4 w-4" strokeWidth={1.7} />
+                  </button>
+                )}
+              </div>
             </header>
             <MessageThread messages={messages} />
             <Composer
@@ -234,6 +262,7 @@ export function InboxClient() {
               conversation={selected}
               refreshKey={detailRev}
               onPatchConversation={patchConversation}
+              onClearConversation={clearConversation}
               onClose={() => togglePanel(false)}
             />
           </div>

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Check, ChevronRight, Sparkles, UserRound } from "lucide-react";
+import { Check, ChevronRight, Sparkles, Trash2, UserRound } from "lucide-react";
 import type { ConversationDto, StageDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
@@ -20,6 +20,7 @@ export function ContactPanel({
   conversation,
   refreshKey = 0,
   onPatchConversation,
+  onClearConversation,
   onClose,
 }: {
   conversation: ConversationDto;
@@ -29,11 +30,14 @@ export function ContactPanel({
     aiEnabled?: boolean;
     reactivate?: boolean;
   }) => Promise<void>;
+  onClearConversation?: () => Promise<void>;
   onClose: () => void;
 }) {
   const [notes, setNotes] = useState("");
   const [notesLoaded, setNotesLoaded] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [confirmingClear, setConfirmingClear] = useState(false);
   const [stages, setStages] = useState<StageDto[]>([]);
   const [currentStageId, setCurrentStageId] = useState<string | null>(null);
   const [leadId, setLeadId] = useState<string | null>(null);
@@ -284,7 +288,7 @@ export function ContactPanel({
         )}
 
         {/* Notas */}
-        <section className="p-4">
+        <section className="border-b p-4">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-3">
             Notas
           </p>
@@ -304,6 +308,57 @@ export function ContactPanel({
           >
             {savingNotes ? "Guardando…" : "Guardar notas"}
           </Button>
+        </section>
+
+        {/* Acciones de la conversación */}
+        <section className="p-4">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-3">
+            Mantenimiento de chat
+          </p>
+          {confirmingClear ? (
+            <div className="space-y-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+              <p className="text-xs font-medium text-destructive">
+                ¿Confirmas eliminar todo el historial de mensajes de esta conversación en la BD?
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="flex-1"
+                  disabled={clearing}
+                  onClick={async () => {
+                    setClearing(true);
+                    try {
+                      if (onClearConversation) await onClearConversation();
+                    } finally {
+                      setClearing(false);
+                      setConfirmingClear(false);
+                    }
+                  }}
+                >
+                  {clearing ? "Eliminando…" : "Sí, limpiar conversación"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={clearing}
+                  onClick={() => setConfirmingClear(false)}
+                >
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              variant="destructive"
+              className="w-full flex items-center justify-center gap-2"
+              onClick={() => setConfirmingClear(true)}
+            >
+              <Trash2 className="h-4 w-4" strokeWidth={1.7} />
+              Limpiar conversación
+            </Button>
+          )}
         </section>
       </div>
     </div>
