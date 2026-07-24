@@ -7,9 +7,49 @@ import { scoped } from "@/lib/db/tenant";
 export type TelegramIntegrationRoute = {
   id: string;
   organizationId: string;
+  status: "pending" | "header_pending" | "connected" | "reconnect_required" | "failed";
+  webhookHeaderSecretHash: string | null;
 };
 
 export type TelegramWebhookReceiptResult = "received" | "duplicate" | "conflict";
+
+export async function captureTelegramReceiptContext(input: {
+  organizationId: string;
+  chatId: string;
+  menuInstanceId?: string | null;
+}): Promise<{ conversationId: string | null; expectedFsmRevision: number; expectedFsmStateKey: string }> {
+  const db = getDb();
+  if (input.menuInstanceId) {
+    const rows = await db.select({
+      conversationId: schema.telegramMenuInstance.conversationId,
+      expectedFsmRevision: schema.telegramMenuInstance.fsmRevision,
+      expectedFsmStateKey: schema.telegramMenuInstance.fsbState,
+    }).from(schema.telegramMenuInstance).where(scoped(
+      schema.telegramMenuInstance.organizationId,
+      input.organizationId,
+      and(eq(schema.telegramMenuInstance.id, input.menuInstanceId), eq(schema.telegramMenuInstance.chatId, input.chatId)),
+    )).limit(1);
+    if (rows[0]) return rows[0];
+  }
+  const rows = await db.select({
+    conversationId: schema.conversation.id,
+    expectedFsmRevision: schema.conversation.fsmRevision,
+    stateMetadata: schema.conversation.stateMetadata,
+  }).from(schema.contact)
+    .innerJoin(schema.conversation, eq(schema.conversation.contactId, schema.contact.id))
+    .where(scoped(schema.contact.organizationId, input.organizationId, and(
+      eq(schema.contact.channel, "telegram"),
+      eq(schema.contact.externalAddress, input.chatId),
+      eq(schema.conversation.organizationId, input.organizationId),
+      eq(schema.conversation.isTest, false),
+    ))).limit(1);
+  const row = rows[0];
+  if (!row) return { conversationId: null, expectedFsmRevision: 0, expectedFsmStateKey: "menu:main/main_menu" };
+  const state = (row.stateMetadata ?? {}) as Record<string, unknown>;
+  const currentState = typeof state.current_state === "string" ? state.current_state : "menu:main";
+  const activeStep = typeof state.active_step === "string" ? state.active_step : currentState === "menu:main" ? "main_menu" : "unknown";
+  return { conversationId: row.conversationId, expectedFsmRevision: row.expectedFsmRevision, expectedFsmStateKey: `${currentState}/${activeStep}` };
+}
 
 /** Genera un secreto opaco para incluir una sola vez en la URL del webhook. */
 export function createTelegramWebhookToken(): string {
@@ -30,6 +70,8 @@ export async function findTelegramIntegrationByWebhookToken(
     .select({
       id: schema.telegramIntegration.id,
       organizationId: schema.telegramIntegration.organizationId,
+      status: schema.telegramIntegration.status,
+      webhookHeaderSecretHash: schema.telegramIntegration.webhookHeaderSecretHash,
     })
     .from(schema.telegramIntegration)
     .where(
@@ -52,6 +94,10 @@ export async function registerTelegramWebhookReceipt(input: {
   integrationId: string;
   updateId: number;
   payloadHash: string;
+  payload?: Record<string, unknown>;
+  conversationId?: string | null;
+  expectedFsmRevision?: number | null;
+  expectedFsmStateKey?: string | null;
 }): Promise<TelegramWebhookReceiptResult> {
   const db = getDb();
   const inserted = await db
@@ -62,11 +108,16 @@ export async function registerTelegramWebhookReceipt(input: {
       integrationId: input.integrationId,
       updateId: input.updateId,
       payloadHash: input.payloadHash,
+      payload: input.payload ?? {},
+      conversationId: input.conversationId,
+      expectedFsmRevision: input.expectedFsmRevision,
+      expectedFsmStateKey: input.expectedFsmStateKey,
       status: "received",
     })
     .onConflictDoNothing({
       target: [
         schema.telegramWebhookReceipt.organizationId,
+        schema.telegramWebhookReceipt.integrationId,
         schema.telegramWebhookReceipt.updateId,
       ],
     })
@@ -82,6 +133,7 @@ export async function registerTelegramWebhookReceipt(input: {
     .where(
       and(
         scoped(schema.telegramWebhookReceipt.organizationId, input.organizationId),
+        eq(schema.telegramWebhookReceipt.integrationId, input.integrationId),
         eq(schema.telegramWebhookReceipt.updateId, input.updateId)
       )
     )
@@ -102,4 +154,22 @@ export async function registerTelegramWebhookReceipt(input: {
       )
     );
   return "conflict";
+}
+
+export async function registerTelegramWebhookRejection(input: {
+  organizationId: string;
+  integrationId: string;
+  payloadHash: string;
+  reason: "malformed" | "oversized";
+}): Promise<void> {
+  await getDb().insert(schema.telegramWebhookRejection).values({
+    id: newId("telegramRejection"),
+    ...input,
+  }).onConflictDoNothing({
+    target: [
+      schema.telegramWebhookRejection.organizationId,
+      schema.telegramWebhookRejection.integrationId,
+      schema.telegramWebhookRejection.payloadHash,
+    ],
+  });
 }
