@@ -1,8 +1,13 @@
+import dns from "node:dns";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
-import { drainTelegramMenuActions } from "@/server/telegram/menu-action-runner";
+import { startTelegramReliabilityWorker } from "@/server/telegram/worker";
 
-const workerGlobal = globalThis as unknown as { __telegramMenuRecoveryTimer?: NodeJS.Timeout };
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch {
+  // Ignorar si el entorno no soporta setDefaultResultOrder
+}
 
 /**
  * Limpieza al arranque (FR-034): corridas del Laboratorio que quedaron
@@ -31,16 +36,6 @@ export async function cleanupOrphanRuns(): Promise<void> {
   }
 }
 
-export async function startTelegramMenuRecovery(): Promise<void> {
-  await drainTelegramMenuActions().catch((error) =>
-    console.error("[boot] recuperación de acciones Telegram falló:", error)
-  );
-  if (workerGlobal.__telegramMenuRecoveryTimer) return;
-  const timer = setInterval(() => {
-    void drainTelegramMenuActions().catch((error) =>
-      console.error("[telegram] recuperación de acciones falló:", error)
-    );
-  }, 5_000);
-  timer.unref();
-  workerGlobal.__telegramMenuRecoveryTimer = timer;
+export async function startTelegramReliabilityRecovery(): Promise<void> {
+  await startTelegramReliabilityWorker();
 }
