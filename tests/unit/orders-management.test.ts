@@ -34,6 +34,7 @@ describe("Orders queue & status management API integration", () => {
       orderNumber: "ORD-999001",
       items: [{ productId: "prod1", quantity: 3, unitPrice: 2500, name: "Empanada", presentation: "Unidad" }],
       totalAmount: 7500,
+      isPaid: false,
       status: "pending",
     });
   });
@@ -42,22 +43,28 @@ describe("Orders queue & status management API integration", () => {
     await db.delete(schema.organization).where(eq(schema.organization.id, orgId));
   });
 
-  it("stores and queries order queue with pending, processing, paused, completed statuses", async () => {
-    // 1. Initial status is pending
+  it("stores and queries order queue with isPaid and status transitions", async () => {
+    // 1. Initial status is pending and isPaid false
     const initialRows = await db.select().from(schema.order).where(scoped(schema.order.organizationId, orgId, eq(schema.order.id, orderId)));
     expect(initialRows[0]?.status).toBe("pending");
+    expect(initialRows[0]?.isPaid).toBe(false);
 
-    // 2. Transition to processing
+    // 2. Update isPaid to true
+    await db.update(schema.order).set({ isPaid: true }).where(scoped(schema.order.organizationId, orgId, eq(schema.order.id, orderId)));
+    const paidRows = await db.select().from(schema.order).where(scoped(schema.order.organizationId, orgId, eq(schema.order.id, orderId)));
+    expect(paidRows[0]?.isPaid).toBe(true);
+
+    // 3. Transition to processing
     await db.update(schema.order).set({ status: "processing" }).where(scoped(schema.order.organizationId, orgId, eq(schema.order.id, orderId)));
     const procRows = await db.select().from(schema.order).where(scoped(schema.order.organizationId, orgId, eq(schema.order.id, orderId)));
     expect(procRows[0]?.status).toBe("processing");
 
-    // 3. Transition to paused
+    // 4. Transition to paused
     await db.update(schema.order).set({ status: "paused" }).where(scoped(schema.order.organizationId, orgId, eq(schema.order.id, orderId)));
     const pausedRows = await db.select().from(schema.order).where(scoped(schema.order.organizationId, orgId, eq(schema.order.id, orderId)));
     expect(pausedRows[0]?.status).toBe("paused");
 
-    // 4. Transition to completed
+    // 5. Transition to completed
     await db.update(schema.order).set({ status: "completed" }).where(scoped(schema.order.organizationId, orgId, eq(schema.order.id, orderId)));
     const compRows = await db.select().from(schema.order).where(scoped(schema.order.organizationId, orgId, eq(schema.order.id, orderId)));
     expect(compRows[0]?.status).toBe("completed");

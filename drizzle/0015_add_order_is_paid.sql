@@ -1,0 +1,1 @@
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS "is_paid" boolean DEFAULT false NOT NULL;

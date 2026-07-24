@@ -5,11 +5,15 @@ import Link from "next/link";
 import {
   CheckCircle2,
   Clock,
+  CreditCard,
+  DollarSign,
+  Filter,
   MessageSquare,
   PauseCircle,
   Play,
   RotateCcw,
   ShoppingBag,
+  TrendingUp,
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -36,6 +40,7 @@ export type OrderDto = {
     presentation: string | null;
   }[];
   totalAmount: number;
+  isPaid: boolean;
   status: "pending" | "confirmed" | "processing" | "paused" | "completed" | "cancelled";
   createdAt: string;
   updatedAt: string;
@@ -69,6 +74,7 @@ export function OrdersClient() {
   const [orders, setOrders] = useState<OrderDto[] | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [filterQuery, setFilterQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const refetch = useCallback(async () => {
     const res = await fetch("/api/orders").catch(() => null);
@@ -88,7 +94,6 @@ export function OrdersClient() {
 
   async function updateStatus(orderId: string, status: OrderDto["status"]) {
     setUpdatingId(orderId);
-    // Optimista
     setOrders((prev) =>
       prev ? prev.map((o) => (o.id === orderId ? { ...o, status } : o)) : null
     );
@@ -101,7 +106,28 @@ export function OrdersClient() {
     void refetch();
   }
 
-  const filtered = orders?.filter((o) => {
+  async function togglePaid(orderId: string, isPaid: boolean) {
+    setUpdatingId(orderId);
+    setOrders((prev) =>
+      prev ? prev.map((o) => (o.id === orderId ? { ...o, isPaid } : o)) : null
+    );
+    await fetch(`/api/orders/${orderId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ isPaid }),
+    }).catch(() => null);
+    setUpdatingId(null);
+    void refetch();
+  }
+
+  // Filtrado
+  const filtered = (orders ?? []).filter((o) => {
+    // Filtro por estado
+    if (statusFilter !== "all") {
+      if (statusFilter === "pending" && o.status !== "pending" && o.status !== "confirmed") return false;
+      if (statusFilter !== "pending" && o.status !== statusFilter) return false;
+    }
+    // Filtro por texto
     if (!filterQuery) return true;
     const q = filterQuery.toLowerCase();
     return (
@@ -109,10 +135,18 @@ export function OrdersClient() {
       o.contact.name.toLowerCase().includes(q) ||
       o.items.some((i) => i.name.toLowerCase().includes(q))
     );
-  }) ?? [];
+  });
+
+  // Métricas de primer vistazo
+  const pendingCount = orders?.filter((o) => o.status === "pending" || o.status === "confirmed").length ?? 0;
+  const processingCount = orders?.filter((o) => o.status === "processing").length ?? 0;
+  const completedOrders = orders?.filter((o) => o.status === "completed") ?? [];
+  const totalSales = completedOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+  const avgTicket = completedOrders.length > 0 ? totalSales / completedOrders.length : 0;
 
   return (
     <div className="flex h-full flex-col">
+      {/* Header */}
       <header className="flex flex-wrap items-center justify-between gap-4 border-b bg-background/80 backdrop-blur-sm px-6 py-4">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand/10 text-brand">
@@ -126,13 +160,30 @@ export function OrdersClient() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Filtro por estado */}
+          <div className="flex items-center gap-1.5 rounded-md border bg-background px-2.5 py-1 text-xs">
+            <Filter className="h-3.5 w-3.5 text-text-3" />
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="bg-transparent font-medium focus:outline-none"
+            >
+              <option value="all">Todos los estados</option>
+              <option value="pending">Solo Pendientes</option>
+              <option value="processing">Solo En Proceso</option>
+              <option value="paused">Solo En Pausa</option>
+              <option value="completed">Solo Completados</option>
+              <option value="cancelled">Solo Cancelados</option>
+            </select>
+          </div>
+
           <input
             type="text"
-            placeholder="Buscar por #pedido, cliente o producto…"
+            placeholder="Buscar #pedido, cliente..."
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
-            className="h-9 w-64 rounded-md border border-input bg-background px-3 text-xs focus:border-brand focus:outline-none"
+            className="h-8 w-56 rounded-md border border-input bg-background px-3 text-xs focus:border-brand focus:outline-none"
           />
           <Button variant="outline" size="sm" onClick={() => void refetch()}>
             Actualizar
@@ -140,6 +191,50 @@ export function OrdersClient() {
         </div>
       </header>
 
+      {/* Tarjetas de Métricas (Primer Vistazo) */}
+      <section className="grid grid-cols-2 gap-4 border-b bg-subtle/30 px-6 py-3.5 md:grid-cols-4">
+        <div className="flex items-center gap-3 rounded-lg border bg-background p-3 shadow-2xs">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-amber-500/10 text-amber-600">
+            <Clock className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="text-[11px] font-medium text-text-3">Pedidos Pendientes</p>
+            <p className="text-base font-bold text-foreground">{pendingCount}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 rounded-lg border bg-background p-3 shadow-2xs">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-500/10 text-blue-600">
+            <Play className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="text-[11px] font-medium text-text-3">En Proceso</p>
+            <p className="text-base font-bold text-foreground">{processingCount}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 rounded-lg border bg-background p-3 shadow-2xs">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600">
+            <DollarSign className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="text-[11px] font-medium text-text-3">Total Ventas Completadas</p>
+            <p className="text-base font-bold text-foreground">{formatCurrency(totalSales)}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 rounded-lg border bg-background p-3 shadow-2xs">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-brand/10 text-brand">
+            <TrendingUp className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="text-[11px] font-medium text-text-3">Ticket Promedio</p>
+            <p className="text-base font-bold text-foreground">{formatCurrency(avgTicket)}</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Tablero Kanban de Cola de Pedidos */}
       <div className="flex-1 overflow-x-auto p-6">
         {orders === null ? (
           <div className="flex h-64 items-center justify-center text-sm text-text-3">
@@ -147,7 +242,11 @@ export function OrdersClient() {
           </div>
         ) : (
           <div className="flex h-full min-w-[1200px] gap-4">
-            {COLUMNS.map((col) => {
+            {COLUMNS.filter((col) => {
+              if (statusFilter === "all") return true;
+              if (statusFilter === "pending") return col.id === "pending";
+              return col.id === statusFilter;
+            }).map((col) => {
               const colOrders = filtered.filter((o) => {
                 if (col.id === "pending") return o.status === "pending" || o.status === "confirmed";
                 return o.status === col.id;
@@ -188,10 +287,26 @@ export function OrdersClient() {
                             <span className="font-mono text-xs font-bold text-brand">
                               #{order.orderNumber}
                             </span>
-                            <span className="flex items-center gap-1 text-[11px] text-text-4">
-                              <Clock className="h-3 w-3" />
-                              {timeAgo(order.createdAt)}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              {/* Badge Estado de Pago */}
+                              <button
+                                onClick={() => void togglePaid(order.id, !order.isPaid)}
+                                title="Hacer clic para alternar estado de pago"
+                                className={cn(
+                                  "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors",
+                                  order.isPaid
+                                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25"
+                                    : "bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/25"
+                                )}
+                              >
+                                <CreditCard className="h-3 w-3" />
+                                {order.isPaid ? "PAGADO" : "NO PAGADO"}
+                              </button>
+                              <span className="flex items-center gap-1 text-[11px] text-text-4">
+                                <Clock className="h-3 w-3" />
+                                {timeAgo(order.createdAt)}
+                              </span>
+                            </div>
                           </div>
 
                           {/* Cliente */}

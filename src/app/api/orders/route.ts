@@ -30,6 +30,7 @@ export const GET = withAuth(async (session) => {
     },
     items: r.order.items,
     totalAmount: r.order.totalAmount,
+    isPaid: r.order.isPaid,
     status: r.order.status,
     createdAt: r.order.createdAt.toISOString(),
     updatedAt: r.order.updatedAt.toISOString(),

@@ -210,6 +210,7 @@ describe("Simulación E2E de Compra en E-Commerce con IA (Paso 5.2)", () => {
       orderNumber: "ORD-777888",
       items: [],
       totalAmount: 7000000,
+      isPaid: false,
       status: "confirmed" as const,
       createdAt: new Date(),
       updatedAt: new Date(),
