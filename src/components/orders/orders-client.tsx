@@ -88,13 +88,14 @@ export function OrdersClient() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [filterQuery, setFilterQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [rangeFilter, setRangeFilter] = useState<string>("24h");
 
   const refetch = useCallback(async () => {
-    const res = await fetch("/api/orders").catch(() => null);
+    const res = await fetch(`/api/orders?range=${rangeFilter}`).catch(() => null);
     if (!res?.ok) return;
     const data = (await res.json()) as { orders: OrderDto[] };
     setOrders(data.orders);
-  }, []);
+  }, [rangeFilter]);
 
   useEffect(() => {
     void refetch();
@@ -175,6 +176,21 @@ export function OrdersClient() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          {/* Filtro de Jornada Operativa */}
+          <div className="flex items-center gap-1.5 rounded-md border bg-background px-2.5 py-1 text-xs">
+            <Clock className="h-3.5 w-3.5 text-brand" />
+            <select
+              value={rangeFilter}
+              onChange={(e) => setRangeFilter(e.target.value)}
+              className="bg-transparent font-semibold text-brand focus:outline-none"
+            >
+              <option value="24h">Jornada Activa (Últimas 24h)</option>
+              <option value="48h">Últimas 48 horas</option>
+              <option value="7d">Últimos 7 días</option>
+              <option value="all">Todo el Histórico</option>
+            </select>
+          </div>
+
           {/* Filtro por estado */}
           <div className="flex items-center gap-1.5 rounded-md border bg-background px-2.5 py-1 text-xs">
             <Filter className="h-3.5 w-3.5 text-text-3" />

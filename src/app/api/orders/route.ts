@@ -1,12 +1,42 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray, or, and, gte } from "drizzle-orm";
 import { withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withAuth(async (session) => {
+const ACTIVE_STATUSES = ["pending", "confirmed", "processing", "pending_shipment", "shipped", "paused"] as const;
+
+export const GET = withAuth(async (session, req: Request) => {
+  const url = new URL(req.url);
+  const range = url.searchParams.get("range") ?? "24h";
+
+  let cutoffDate: Date | undefined;
+  if (range === "24h") {
+    cutoffDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  } else if (range === "48h") {
+    cutoffDate = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  } else if (range === "7d") {
+    cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  }
+
   const db = getDb();
+
+  // Si hay cutoffDate, mantener SIEMPRE los pedidos activos, y filtrar únicamente los terminales antiguos
+  const condition = cutoffDate
+    ? scoped(
+        schema.order.organizationId,
+        session.organizationId,
+        or(
+          inArray(schema.order.status, [...ACTIVE_STATUSES]),
+          and(
+            inArray(schema.order.status, ["delivered", "completed", "cancelled"]),
+            gte(schema.order.updatedAt, cutoffDate)
+          )
+        )
+      )
+    : scoped(schema.order.organizationId, session.organizationId);
+
   const rows = await db
     .select({
       order: schema.order,
@@ -14,7 +44,7 @@ export const GET = withAuth(async (session) => {
     })
     .from(schema.order)
     .innerJoin(schema.contact, eq(schema.order.contactId, schema.contact.id))
-    .where(scoped(schema.order.organizationId, session.organizationId))
+    .where(condition)
     .orderBy(desc(schema.order.createdAt));
 
   const orders = rows.map((r) => ({
