@@ -162,7 +162,7 @@ export async function clearConversationMessages(
 ) {
   const db = getDb();
   return db.transaction(async (tx) => {
-    // 1. Eliminar todos los mensajes de esta conversación en PostgreSQL
+    // 1. Eliminar únicamente los mensajes de texto de esta conversación en PostgreSQL
     const deletedMessages = await tx
       .delete(schema.message)
       .where(
@@ -174,14 +174,13 @@ export async function clearConversationMessages(
       )
       .returning({ id: schema.message.id });
 
-    // 2. Resetear contadores y estado FSM de la conversación
+    // 2. Resetear únicamente marcas de mensaje en la conversación (sin tocar FSM stateMetadata ni carritos/pedidos)
     await tx
       .update(schema.conversation)
       .set({
         unreadCount: 0,
         lastMessageAt: null,
         lastInboundAt: null,
-        stateMetadata: {},
         updatedAt: new Date(),
       })
       .where(
@@ -189,21 +188,6 @@ export async function clearConversationMessages(
           schema.conversation.organizationId,
           organizationId,
           eq(schema.conversation.id, conversationId)
-        )
-      );
-
-    // 3. Marcar carritos activos como abandonados para limpiar el estado
-    await tx
-      .update(schema.cart)
-      .set({ items: [], status: "abandoned", updatedAt: new Date() })
-      .where(
-        scoped(
-          schema.cart.organizationId,
-          organizationId,
-          and(
-            eq(schema.cart.conversationId, conversationId),
-            eq(schema.cart.status, "active")
-          )
         )
       );
 

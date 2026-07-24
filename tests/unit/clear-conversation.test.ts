@@ -17,6 +17,7 @@ const db = getDb();
 const orgId = newId("organization");
 const contactId = newId("contact");
 const conversationId = newId("conversation");
+const cartId = newId("cart");
 
 describe("clearConversationMessages unit & integration", () => {
   beforeAll(async () => {
@@ -34,7 +35,15 @@ describe("clearConversationMessages unit & integration", () => {
       contactId,
       isTest: true,
       unreadCount: 3,
-      stateMetadata: { current_state: "menu:catalog" },
+      stateMetadata: { current_state: "menu:catalog", active_step: "item_selected" },
+    });
+
+    await db.insert(schema.cart).values({
+      id: cartId,
+      organizationId: orgId,
+      conversationId,
+      status: "active",
+      items: [{ productId: "p1", quantity: 2, unitPrice: 15, name: "Producto 1", presentation: "Unidad" }],
     });
 
     await db.insert(schema.message).values([
@@ -47,7 +56,7 @@ describe("clearConversationMessages unit & integration", () => {
     await db.delete(schema.organization).where(eq(schema.organization.id, orgId));
   });
 
-  it("clears all messages from PostgreSQL and resets conversation counters & stateMetadata", async () => {
+  it("clears messages from PostgreSQL while keeping active cart and FSM stateMetadata completely intact", async () => {
     // 1. Verify messages exist prior to clear
     const initialMessages = await db.select().from(schema.message).where(scoped(schema.message.organizationId, orgId, eq(schema.message.conversationId, conversationId)));
     expect(initialMessages).toHaveLength(2);
@@ -60,13 +69,15 @@ describe("clearConversationMessages unit & integration", () => {
     const remainingMessages = await db.select().from(schema.message).where(scoped(schema.message.organizationId, orgId, eq(schema.message.conversationId, conversationId)));
     expect(remainingMessages).toHaveLength(0);
 
-    // 4. Verify conversation metadata is reset
+    // 4. Verify conversation stateMetadata is INTACT (not reset)
     const convRows = await db.select().from(schema.conversation).where(scoped(schema.conversation.organizationId, orgId, eq(schema.conversation.id, conversationId)));
-    expect(convRows[0]).toMatchObject({
-      unreadCount: 0,
-      lastMessageAt: null,
-      lastInboundAt: null,
-      stateMetadata: {},
-    });
+    expect(convRows[0]?.stateMetadata).toEqual({ current_state: "menu:catalog", active_step: "item_selected" });
+    expect(convRows[0]?.unreadCount).toBe(0);
+    expect(convRows[0]?.lastMessageAt).toBeNull();
+
+    // 5. Verify active cart remains ACTIVE and UNTOUCHED
+    const carts = await db.select().from(schema.cart).where(scoped(schema.cart.organizationId, orgId, eq(schema.cart.id, cartId)));
+    expect(carts[0]?.status).toBe("active");
+    expect(carts[0]?.items).toHaveLength(1);
   });
 });
