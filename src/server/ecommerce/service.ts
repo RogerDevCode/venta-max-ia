@@ -9,6 +9,9 @@ import {
   invalidateCatalogCache,
 } from "@/server/ecommerce/cache";
 import { getCommerceSettings } from "@/server/ecommerce/settings";
+import { aggregateAndValidateShape, CartShapeError, normalizeCartItems, type CartPriceBucket } from "@/server/ecommerce/cart-normalizer";
+import { allocateOrderNumber } from "@/server/ecommerce/order-number";
+import { type PriceChange } from "@/server/ecommerce/pricing";
 
 export interface CartItem {
   productId: string;
@@ -16,6 +19,7 @@ export interface CartItem {
   unitPrice: number;
   name: string;
   presentation: string | null;
+  source?: string;
 }
 
 type LegacyCartItem = Omit<CartItem, "productId" | "presentation"> & {
@@ -154,9 +158,10 @@ export async function addProductToCart(input: {
     }
     if (!cart) return { ok: false as const, error: "cart_create_failed" as const };
     const items = [...((cart.items ?? []) as LegacyCartItem[])];
-    const index = items.findIndex((item) => item.productId === productId);
+    const source = "cart";
+    const index = items.findIndex((item) => item.productId === productId && item.unitPrice === product.price && (item.source ?? "cart") === source);
     const current = index >= 0 ? items[index]!.quantity : 0;
-    const total = current + quantity;
+    const total = items.filter((item) => item.productId === productId).reduce((sum, item) => sum + item.quantity, 0) + quantity;
     if (total > settings.maxUnitsPerProduct) {
       return { ok: false as const, error: "tenant_limit_exceeded" as const, limit: settings.maxUnitsPerProduct };
     }
@@ -164,8 +169,9 @@ export async function addProductToCart(input: {
       return { ok: false as const, error: "insufficient_stock" as const, available: product.stock };
     }
     const item: CartItem = {
-      productId, quantity: total, unitPrice: product.price, name: product.name,
+      productId, quantity: current + quantity, unitPrice: product.price, name: product.name,
       presentation: product.description?.trim() || null,
+      source,
     };
     if (index >= 0) items[index] = item;
     else items.push(item);
@@ -211,7 +217,6 @@ export async function confirmarPedido(input: {
   const db = getDb();
   const { organizationId, conversationId } = input;
   const settings = await getCommerceSettings(organizationId);
-  const orderNumber = `ORD-${Math.floor(100000 + Math.random() * 900000)}`;
   try {
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`select ${schema.conversation.id} from ${schema.conversation}
@@ -233,6 +238,10 @@ export async function confirmarPedido(input: {
       const cart = carts[0];
       const rawItems = (cart?.items ?? []) as LegacyCartItem[];
       if (!cart || rawItems.length === 0) return { ok: false as const, error: "carrito_vacio" as const };
+      const normalizedItems = normalizeCartItems(rawItems.map((item) => {
+        if (!item.productId) throw new InvalidCartError();
+        return { ...item, productId: item.productId, presentation: item.presentation ?? null } as CartPriceBucket;
+      }), { maxUnitsPerProduct: settings.maxUnitsPerProduct });
       const activeOrders = await tx.select().from(schema.order)
         .where(scoped(schema.order.organizationId, organizationId,
           and(eq(schema.order.contactId, contactId), inArray(schema.order.status, ACTIVE_ORDER_STATUSES))))
@@ -249,12 +258,11 @@ export async function confirmarPedido(input: {
       }
 
       const resolved: CartItem[] = [];
-      for (const item of [...rawItems].sort((a, b) => (a.productId ?? a.sku ?? "").localeCompare(b.productId ?? b.sku ?? ""))) {
+      const priceChanges: PriceChange[] = [];
+      for (const item of normalizedItems) {
         if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) throw new InvalidCartError();
         if (item.quantity > settings.maxUnitsPerProduct) throw new CartLimitError(settings.maxUnitsPerProduct);
-        const identity = item.productId
-          ? eq(schema.product.id, item.productId)
-          : item.sku ? eq(schema.product.sku, item.sku) : eq(schema.product.id, "");
+        const identity = eq(schema.product.id, item.productId);
         const initial = await tx.select({ id: schema.product.id }).from(schema.product)
           .where(scoped(schema.product.organizationId, organizationId, identity)).limit(1);
         if (!initial[0]) throw new StockChangedError(item.productId ?? "unknown", 0, item.quantity);
@@ -278,12 +286,26 @@ export async function confirmarPedido(input: {
         resolved.push({
           productId: product.id, quantity: item.quantity, unitPrice: product.price,
           name: product.name, presentation: product.description?.trim() || null,
+          source: item.source ?? "cart",
         });
+        if (item.unitPrice !== product.price) {
+          priceChanges.push({
+            productId: product.id,
+            name: product.name,
+            presentation: product.description?.trim() || null,
+            source: item.source ?? "cart",
+            oldPrice: item.unitPrice,
+            newPrice: product.price,
+            quantity: item.quantity,
+            difference: (product.price - item.unitPrice) * item.quantity,
+          });
+        }
       }
       const totalAmount = resolved.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
       if (!Number.isSafeInteger(totalAmount) || totalAmount < 0 || totalAmount > 2_147_483_647) {
         throw new InvalidCartError();
       }
+      const orderNumber = await allocateOrderNumber(tx, organizationId);
       const orders = await tx.insert(schema.order).values({
         id: newId("order"), organizationId, conversationId, contactId, cartId: cart.id,
         orderNumber, items: resolved, totalAmount, status: "confirmed",
@@ -291,11 +313,13 @@ export async function confirmarPedido(input: {
       if (!orders[0]) throw new Error("No se pudo crear el pedido");
       await tx.update(schema.cart).set({ status: "converted", updatedAt: new Date() })
         .where(scoped(schema.cart.organizationId, organizationId, eq(schema.cart.id, cart.id)));
-      return { ok: true as const, order: orders[0], items: resolved };
+      return { ok: true as const, order: orders[0], items: resolved, priceChanges };
     });
     if (!result.ok) return result;
     commitMemoryOrderStock(organizationId, result.items);
-    return { ok: true as const, order: result.order };
+    return result.priceChanges.length > 0
+      ? { ok: true as const, order: result.order, priceChanges: result.priceChanges }
+      : { ok: true as const, order: result.order };
   } catch (error) {
     if (error instanceof StockChangedError) {
       return { ok: false as const, error: "stock_changed" as const,
@@ -305,6 +329,12 @@ export async function confirmarPedido(input: {
       return { ok: false as const, error: "tenant_limit_exceeded" as const, limit: error.limit };
     }
     if (error instanceof InvalidCartError) return { ok: false as const, error: "invalid_cart" as const };
+    if (error instanceof CartShapeError) {
+      if (error.code === "tenant_limit_exceeded") {
+        return { ok: false as const, error: "tenant_limit_exceeded" as const, limit: settings.maxUnitsPerProduct };
+      }
+      return { ok: false as const, error: "invalid_cart" as const };
+    }
     throw error;
   }
 }
@@ -465,13 +495,16 @@ export async function mergeLatestOrderIntoActiveCart(input: {
           requested,
         };
       }
-      mergedItems.push({
-        productId,
-        quantity: requested,
-        unitPrice: product.price,
-        name: product.name,
-        presentation: product.description?.trim() || null,
-      });
+      for (const [source, sourceItems] of [[`order:${candidate.id}`, orderItems], ["cart", cartItems]] as const) {
+        for (const item of sourceItems.filter((entry) => entry.productId === productId)) {
+          mergedItems.push({
+            ...item,
+            name: product.name,
+            presentation: product.description?.trim() || null,
+            source: item.source ?? source,
+          });
+        }
+      }
     }
 
     const cancelled = await tx.update(schema.order).set({ status: "cancelled", updatedAt: new Date() })
@@ -491,7 +524,7 @@ export async function mergeLatestOrderIntoActiveCart(input: {
       }).where(scoped(schema.product.organizationId, input.organizationId, eq(schema.product.id, item.productId)));
     }
     const updated = await tx.update(schema.cart).set({
-      items: mergedItems,
+      items: aggregateAndValidateShape(mergedItems),
       reopenedFromOrderId: candidate.id,
       updatedAt: new Date(),
     }).where(scoped(schema.cart.organizationId, input.organizationId,

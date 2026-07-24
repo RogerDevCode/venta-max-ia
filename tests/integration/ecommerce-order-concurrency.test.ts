@@ -40,7 +40,7 @@ describe.sequential("ecommerce cart and stock concurrency", () => {
     await db.insert(schema.category).values({ id: categoryId, organizationId, name: "Test" });
     for (const [index, conversationId] of conversationIds.entries()) {
       const contactId = newId("contact");
-      await db.insert(schema.contact).values({ id: contactId, organizationId, phone: `ecom-test-${index}`, name: `Test ${index}` });
+      await db.insert(schema.contact).values({ id: contactId, organizationId, channel: "test", externalAddress: `ecom-test-${index}`, name: `Test ${index}` });
       await db.insert(schema.conversation).values({ id: conversationId, organizationId, contactId });
     }
     await db.insert(schema.product).values([
