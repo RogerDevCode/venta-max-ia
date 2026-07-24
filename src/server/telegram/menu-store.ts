@@ -34,7 +34,7 @@ export async function reserveTelegramMenu(input: {
     await tx.execute(sql`select ${schema.conversation.id} from ${schema.conversation}
       where ${schema.conversation.organizationId} = ${input.organizationId}
         and ${schema.conversation.id} = ${input.conversationId} for update`);
-    const conversations = await tx.select({ stateMetadata: schema.conversation.stateMetadata })
+    const conversations = await tx.select({ stateMetadata: schema.conversation.stateMetadata, fsmRevision: schema.conversation.fsmRevision })
       .from(schema.conversation)
       .where(scoped(schema.conversation.organizationId, input.organizationId, eq(schema.conversation.id, input.conversationId)))
       .limit(1);
@@ -54,6 +54,7 @@ export async function reserveTelegramMenu(input: {
       chatId: input.chatId,
       generation,
       fsbState: stateKey(state),
+      fsmRevision: conversations[0].fsmRevision,
       allowedActions: encoded.allowedActions,
       status: "pending",
     });

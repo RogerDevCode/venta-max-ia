@@ -37,7 +37,7 @@ async function createMenu(
 describe.sequential("Telegram menu concurrency with real PostgreSQL", () => {
   beforeAll(async () => {
     await db.insert(schema.organization).values({ id: organizationId, name: "Telegram concurrency test" });
-    await db.insert(schema.contact).values({ id: contactId, organizationId, phone: TEST_CHAT_ID, name: "Test" });
+    await db.insert(schema.contact).values({ id: contactId, organizationId, channel: "telegram", externalAddress: TEST_CHAT_ID, name: "Test" });
     await db.insert(schema.conversation).values({
       id: conversationId, organizationId, contactId, stateMetadata: {
         current_state: "menu:main", active_step: "main_menu", numeric_options: ["menu:carrito"],

@@ -26,6 +26,7 @@ export async function acceptTelegramMenuCallback(input: {
     const rows = await tx.select({
       menu: schema.telegramMenuInstance,
       stateMetadata: schema.conversation.stateMetadata,
+      fsmRevision: schema.conversation.fsmRevision,
     }).from(schema.telegramMenuInstance)
       .innerJoin(schema.conversation, eq(schema.telegramMenuInstance.conversationId, schema.conversation.id))
       .where(scoped(schema.telegramMenuInstance.organizationId, input.organizationId,
@@ -41,7 +42,7 @@ export async function acceptTelegramMenuCallback(input: {
     const action = row?.menu.allowedActions[decoded.optionIndex];
     const state = (row?.stateMetadata ?? {}) as Record<string, unknown>;
     const currentStateKey = stateKey(state);
-    if (!row || typeof action !== "string" || row.menu.fsbState !== currentStateKey) return { accepted: false };
+    if (!row || typeof action !== "string" || row.menu.fsbState !== currentStateKey || row.menu.fsmRevision !== row.fsmRevision) return { accepted: false };
     if (resolveMenuInput(state, { type: "action", action }).kind === "ignore") return { accepted: false };
 
     const consumed = await tx.update(schema.telegramMenuInstance).set({ status: "consumed", consumedAt: new Date() })
@@ -72,6 +73,10 @@ export async function acceptTelegramMenuCallback(input: {
                   end
                 )
               ) = ${row.menu.fsbState})`
+          , sql`exists (select 1 from ${schema.conversation}
+            where ${schema.conversation.id} = ${schema.telegramMenuInstance.conversationId}
+              and ${schema.conversation.organizationId} = ${input.organizationId}
+              and ${schema.conversation.fsmRevision} = ${row.menu.fsmRevision})`
         )))
       .returning({ id: schema.telegramMenuInstance.id });
     if (!consumed[0]) return { accepted: false };

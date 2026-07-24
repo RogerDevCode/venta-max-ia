@@ -39,7 +39,7 @@ vi.mock("@/lib/telegram/client", () => ({
 }));
 
 vi.mock("@/lib/db", () => {
-  const mockContact = { id: "cont_telegram_1", phone: "123456789", name: "Juan Telegram" };
+  const mockContact = { id: "cont_telegram_1", channel: "telegram", externalAddress: "123456789", name: "Juan Telegram" };
   const mockConversation = { id: "conv_telegram_1", contactId: "cont_telegram_1", organizationId: "org_1" };
 
   return {
@@ -47,8 +47,8 @@ vi.mock("@/lib/db", () => {
       insert: (_table: unknown) => ({
         values: (v: Record<string, unknown>) => {
           // Si es un message
-          if ("waMessageId" in v) {
-            if (insertedMessages.some((m) => m.waMessageId === v.waMessageId)) {
+          if ("externalMessageId" in v) {
+            if (insertedMessages.some((m) => m.externalMessageId === v.externalMessageId)) {
               return {
                 onConflictDoNothing: () => ({
                   returning: () => Promise.resolve([]),
@@ -63,7 +63,7 @@ vi.mock("@/lib/db", () => {
             };
           }
           // Si es contact o conversation
-          if ("phone" in v) {
+          if ("externalAddress" in v) {
             return {
               onConflictDoNothing: () => ({
                 returning: () => Promise.resolve([mockContact]),
@@ -82,7 +82,7 @@ vi.mock("@/lib/db", () => {
           where: () => {
             const resolveResults = () =>
               Promise.resolve(
-                "phone" in (table as Record<string, unknown>)
+                "externalAddress" in (table as Record<string, unknown>)
                   ? [mockContact]
                   : "position" in (table as Record<string, unknown>)
                     ? [{ id: "stage_1" }] // pipelineStage
@@ -107,9 +107,9 @@ vi.mock("@/lib/db", () => {
       }),
     }),
     schema: {
-      contact: { organizationId: "org_id", phone: "phone" },
+      contact: { organizationId: "org_id", channel: "channel", externalAddress: "external_address" },
       conversation: { organizationId: "org_id", contactId: "contact_id", isTest: "is_test", unreadCount: "unread_count" },
-      message: { waMessageId: "wa_message_id" },
+      message: { organizationId: "organization_id", integrationId: "integration_id", externalMessageId: "external_message_id" },
       lead: { id: "id", contactId: "contact_id", organizationId: "organization_id", lastInteractionAt: "last_interaction_at" },
       pipelineStage: { id: "id", organizationId: "organization_id", position: "position" },
     },
@@ -161,7 +161,7 @@ describe("Telegram Webhook Handler (Paso 1.2)", () => {
     };
 
     await processTelegramUpdate({
-      organizationId: "org_1",
+      organizationId: "org_1", integrationId: "tgi_1",
       update,
     });
 
@@ -169,7 +169,7 @@ describe("Telegram Webhook Handler (Paso 1.2)", () => {
     const msg = insertedMessages[0]!;
     expect(msg.organizationId).toBe("org_1");
     expect(msg.conversationId).toBe("conv_telegram_1");
-    expect(msg.waMessageId).toBe("tg_123456789_888");
+    expect(msg.externalMessageId).toBe("message:123456789:888");
     expect(msg.direction).toBe("in");
     expect(msg.type).toBe("text");
     expect(msg.text).toBe("Hola, necesito información de sus servicios");
@@ -191,7 +191,7 @@ describe("Telegram Webhook Handler (Paso 1.2)", () => {
 
     const countBefore = insertedMessages.length;
     await processTelegramUpdate({
-      organizationId: "org_1",
+      organizationId: "org_1", integrationId: "tgi_1",
       update: updateDup,
     });
 
@@ -220,7 +220,7 @@ describe("Telegram Webhook Handler (Paso 1.2)", () => {
     };
 
     await processTelegramUpdate({
-      organizationId: "org_1",
+      organizationId: "org_1", integrationId: "tgi_1",
       update: updateCb,
     });
 
@@ -233,7 +233,7 @@ describe("Telegram Webhook Handler (Paso 1.2)", () => {
   it("ignora silenciosamente un callback viejo sin ejecutar efectos", async () => {
     mockAcceptMenuCallback.mockResolvedValueOnce({ accepted: false });
     await processTelegramUpdate({
-      organizationId: "org_1",
+      organizationId: "org_1", integrationId: "tgi_1",
       update: {
         update_id: 1004,
         callback_query: {

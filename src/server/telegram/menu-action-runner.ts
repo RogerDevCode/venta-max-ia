@@ -1,7 +1,7 @@
 import { and, eq, lte, or, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
-import { ingestInboundMessage } from "@/server/inbox/ingest";
+import { ingestTelegramMessage } from "@/server/inbox/ingest";
 
 const LEASE_MS = 30_000;
 const MAX_ATTEMPTS = 5;
@@ -42,11 +42,17 @@ export async function runTelegramMenuAction(input: {
       .limit(1);
     const menu = menus[0];
     if (!menu) throw new Error("Telegram menu instance missing for accepted action");
-    await ingestInboundMessage({
+    const integrations = await db.select({ id: schema.telegramIntegration.id })
+      .from(schema.telegramIntegration)
+      .where(scoped(schema.telegramIntegration.organizationId, input.organizationId))
+      .limit(1);
+    if (!integrations[0]) throw new Error("Telegram integration missing for accepted action");
+    await ingestTelegramMessage({
       organizationId: input.organizationId,
+      integrationId: integrations[0].id,
       from: menu.chatId,
       profileName: input.profileName || `Telegram ${menu.chatId}`,
-      waMessageId: `tg_cb_${action.callbackQueryId}`,
+      externalMessageId: `callback:${action.callbackQueryId}`,
       type: "interactive",
       text: action.action,
       timestamp: input.timestamp || String(Math.floor(Date.now() / 1000)),
@@ -73,19 +79,17 @@ export function retryDelayMs(attempts: number) {
 
 export async function drainTelegramMenuActions(): Promise<void> {
   const db = getDb();
-  const organizations = await db.select({ id: schema.organization.id }).from(schema.organization).limit(50);
   const now = new Date();
-  const batches = await Promise.all(organizations.map(async ({ id: organizationId }) => {
-    const rows = await db.select({ id: schema.telegramMenuAction.id })
-      .from(schema.telegramMenuAction)
-      .where(scoped(schema.telegramMenuAction.organizationId, organizationId, or(
+  for (;;) {
+    const rows = await db.select({ id: schema.telegramMenuAction.id, organizationId: schema.telegramMenuAction.organizationId })
+      .from(schema.telegramMenuAction).where(or(
         and(eq(schema.telegramMenuAction.status, "pending"), lte(schema.telegramMenuAction.availableAt, now)),
         and(eq(schema.telegramMenuAction.status, "processing"), lte(schema.telegramMenuAction.leaseExpiresAt, now))
-      )))
-      .limit(20);
-    return rows.map((row) => ({ organizationId, actionId: row.id }));
-  }));
-  await Promise.allSettled(batches.flat().map(runTelegramMenuAction));
+      )).limit(100);
+    if (rows.length === 0) return;
+    await Promise.allSettled(rows.map((row) => runTelegramMenuAction({ organizationId: row.organizationId, actionId: row.id })));
+    if (rows.length < 100) return;
+  }
 }
 
 function sqlIncrement(column: typeof schema.telegramMenuAction.attempts) {
