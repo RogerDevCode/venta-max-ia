@@ -1,7 +1,7 @@
 # Diseño de adecuación Telegram-only y endurecimiento de fiabilidad
 
 **Fecha:** 2026-07-23  
-**Estado:** Aprobado para planificación  
+**Estado:** Aprobado con enmiendas de red team para planificación
 **Base auditada:** `9c7d2a8`  
 **Producto:** Venta Max IA, edición exclusivamente Telegram
 
@@ -19,6 +19,8 @@ Corregir los issues encontrados por el red team sin introducir Redis, colas exte
 6. La unión del tercer y cuarto pedido recalcula precios y notifica los cambios.
 7. Todo cambio estructural de BD se entrega como migración Drizzle versionada, con preflight, reconciliación y verificación posterior.
 8. No se envían mensajes reales desde sesiones `is_test`.
+9. Los efectos de dominio son exactly-once; `sendMessage` es at-least-once porque Telegram no ofrece clave idempotente externa. Una aceptación con respuesta perdida queda `delivery_unknown` y nunca repite el efecto de dominio.
+10. El despliegue usa fases reversibles `off | shadow | enforce`, con métricas, rotación verificada de headers y drenaje/congelación de colas.
 
 ## 3. Alternativa seleccionada
 
@@ -39,18 +41,18 @@ La solución queda dividida en unidades aisladas:
 
 `telegram_integration` conservará una integración por organización y añadirá unicidad global sobre `bot_id`. Un bot no podrá ser reclamado por dos tenants.
 
-La integración almacenará además `webhook_header_secret_hash`. El secreto del segmento URL y el secreto enviado en `X-Telegram-Bot-Api-Secret-Token` serán valores aleatorios distintos; ambos se guardan solo como SHA-256. La resolución del tenant usa el token URL y luego exige comparación constante del header contra su hash.
+La integración almacenará además `webhook_header_secret_hash`. Los secretos URL/header serán distintos. Sus hashes se usan para lookup/validación constante; las versiones activa y anterior se guardan además cifradas con AES-256-GCM para compensar rotaciones fallidas sin exponer secretos.
 
 `telegram_webhook_receipt` será la cola durable de updates:
 
-- unicidad `(integration_id, update_id)`;
+- unicidad `(organization_id, integration_id, update_id)` más hash del payload;
 - índice org-first `(organization_id, status, available_at)`;
 - `payload jsonb NOT NULL`;
-- estados `received | processing | processed | ignored | retry | failed`;
+- estados `received | processing | processed | ignored | retryable_failed | failed | conflict`;
 - `attempts`, `available_at`, `lease_expires_at`, `last_error`, `processed_at`;
 - razón de descarte `ignored_reason` para `non_private`, `stale_revision`, `duplicate` o `unsupported`.
 
-El endpoint solo considera aceptado un update después de persistir el payload. El trabajo puede continuar mediante `after()`, pero un drenador periódico reclama también receipts abandonados o con lease vencido. La recuperación no tendrá límite fijo de 50 tenants: usará paginación estable por organización y `available_at`.
+El endpoint solo considera aceptado un update después de persistir el payload. Un worker iniciado desde instrumentation reclama periódicamente receipts abandonados o con lease vencido aun sin tráfico nuevo, con leases SQL, advisory locks, paginación global y shutdown ordenado. Payloads autenticados malformados/sobredimensionados se registran una vez por integración/hash y no crean contactos.
 
 ### 4.2 Identidad externa de mensajes
 
@@ -59,7 +61,7 @@ La columna heredada `message.wa_message_id` se reemplazará por:
 - `channel`, restringido a `telegram` en esta edición;
 - `integration_id` nullable únicamente para mensajes históricos anteriores a la migración;
 - `external_message_id`;
-- unicidad parcial `(integration_id, external_message_id)` cuando ambos valores existan.
+- unicidad parcial org-first `(organization_id, integration_id, external_message_id)` cuando ambos valores existan.
 
 Los IDs se almacenarán sin prefijos ambiguos. Para entradas serán `message:<chatId>:<messageId>` y para callbacks `callback:<callbackQueryId>`. La organización seguirá presente e indexada primero en todas las consultas.
 
@@ -90,11 +92,13 @@ Se añadirá `telegram_outbox` con:
 
 - `organization_id`, `integration_id`, `conversation_id`;
 - payload, texto, markup y revisión FSM asociada;
-- estados `pending | sending | delivered | retry | failed | superseded`;
+- estados `pending | sending | delivered | retryable_failed | delivery_unknown | failed | superseded`;
 - intentos, lease, disponibilidad y error;
 - clave idempotente de dominio.
 
-La transición y el outbox se escriben en la misma transacción. Un menú nuevo no invalida el menú visible anterior hasta que Telegram confirme `sendMessage`. Después de recibir `message_id`, una transacción activa el nuevo menú y marca los anteriores como `superseded`. Si falla el envío, el estado visible anterior permanece coherente y el outbox reintenta.
+La transición y el outbox se escriben en la misma transacción. El menú origen queda consumido por la revisión ganadora y nunca se reactiva. Los avisos obligatorios son inmutables y se ordenan antes del menú resultante; menús/typing pueden supersederse. Tras recibir `message_id`, se activa el nuevo menú. Si falla el envío, el outbox/recovery continúa en la revisión nueva.
+
+`sendMessage` no tiene idempotencia externa. Los timeouts ambiguos se registran `delivery_unknown`: se reconcilian/actualizan por anchor cuando es posible y se reintentan bajo una garantía at-least-once. Una notificación puede duplicarse, pero stock, pedido, carrito y FSM jamás se vuelven a ejecutar.
 
 El cliente Telegram usará timeout, clasificación retryable y backoff con jitter. El token siempre provendrá de `telegram_integration`; `sendChatAction` no usará el bot administrativo. El cambio global de `dns.lookup` se elimina y cualquier preferencia IPv4 se limita al transporte Telegram.
 
@@ -108,7 +112,7 @@ Antes de crearlo, una reconciliación transaccional detectará duplicados, bloqu
 
 ### 5.2 Normalización e invariantes
 
-Toda entrada de carrito o pedido se normaliza por `productId` antes de validar. Las cantidades repetidas se suman y luego se comprueban:
+La forma se agrega por `productId` separadamente de la validación de admisión. Se conservan buckets de precio/origen para no sobrescribir históricos; las cantidades repetidas se suman y luego se comprueban:
 
 - entero seguro mayor que cero;
 - máximo configurable del tenant sobre el total agregado;
@@ -126,7 +130,7 @@ No se utilizará `Math.random`. La unicidad `(organization_id, order_number)` co
 
 ### 5.4 Repricing automático y notificación
 
-En checkout y unión 3.º+4.º se bloquean los productos y se compara `unitPrice` almacenado con el precio actual. El pedido se calcula con precio actual. El resultado de dominio devuelve una lista `priceChanges` con `productId`, nombre, presentación, precio anterior, precio nuevo, cantidad y diferencia.
+En checkout y unión 3.º+4.º se bloquean los productos y se compara cada bucket histórico con el precio actual. El pedido se calcula con precio actual. El resultado de dominio devuelve una lista `priceChanges` con `productId`, nombre, presentación, origen, precio anterior, precio nuevo, cantidad y diferencia por bucket.
 
 La confirmación del pedido y el mensaje de notificación se escriben junto al outbox. El texto muestra cada cambio y el total definitivo. En la unión, el pedido firme anterior y el carrito se consolidan por `productId`, se recalculan al precio vigente y se informa expresamente que el pedido combinado reemplaza al tercer pedido anterior.
 
@@ -145,7 +149,7 @@ Se eliminarán del runtime:
 
 La página `/settings/whatsapp` quedará estática y sin formularios, credenciales ni peticiones, mostrando únicamente `WhatsApp (deshabilitado)`. El acceso de navegación conservará ese rótulo. La sección Plantillas desaparece de Configuración y del composer.
 
-La migración de retiro hará backup previo verificable de tablas WhatsApp, exigirá `CONFIRM_DROP_WHATSAPP_DATA=YES` y después eliminará `meta_credentials`, `template` y columnas exclusivamente WhatsApp. Los datos generales de contactos, conversaciones y mensajes no se eliminan. Los nombres genéricos de mensaje se migran antes del drop para conservar historial Telegram.
+La migración de retiro exige aplicación detenida, colas congeladas/drenadas, `pg_dump` externo con SHA-256 y restore drill. Solo 0014 acepta `CONFIRM_DROP_WHATSAPP_DATA=0014:<sha256-sql>`; el archivo interno `retired_whatsapp` no sustituye el backup. Después elimina `meta_credentials`, `template` y columnas exclusivamente WhatsApp preservando el historial genérico.
 
 ## 7. Autorización y aislamiento
 
@@ -204,7 +208,7 @@ Cada migración incluye consultas postcondición sobre `pg_constraint`, `pg_inde
 - cero issues críticos o altos abiertos;
 - migraciones verificadas sobre BD vacía y BD con datos legacy;
 - suite completa, typecheck, lint y build en verde;
-- API real `getMe` y `getWebhookInfo` sin enviar mensajes;
+- canary real aislado en chat privado, con botones y entradas numéricas reales además de `getMe/getWebhookInfo`;
 - red team FSM, comercio y API aprueban el plan antes de implantar y repiten la auditoría después de implantar.
 
 ## 11. Trazabilidad de issues

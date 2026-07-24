@@ -195,7 +195,7 @@ export function RegisterClientPage() {
               </span>
             </div>
             <p className="text-[11px] leading-relaxed pl-4">
-              Tus datos y conexiones de WhatsApp/Telegram operan con cifrado AES-256 en reposo bajo máxima privacidad y cumplimiento en Chile.
+              Tus datos y conexiones de Telegram operan con cifrado AES-256 en reposo bajo máxima privacidad y cumplimiento en Chile.
             </p>
           </div>
 

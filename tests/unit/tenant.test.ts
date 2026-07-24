@@ -26,14 +26,14 @@ describe("scoped (aislamiento por organización)", () => {
     const condition = scoped(
       schema.contact.organizationId,
       "org_a",
-      eq(schema.contact.phone, "521551111"),
+      eq(schema.contact.externalAddress, "521551111"),
       undefined // condiciones opcionales se filtran
     );
     expect(condition).toBeDefined();
     // el SQL generado contiene ambas columnas unidas por AND
     const query = new PgDialect().sqlToQuery(condition);
     expect(query.sql).toContain("organization_id");
-    expect(query.sql).toContain("phone");
+    expect(query.sql).toContain("external_address");
     expect(query.sql.toLowerCase()).toContain("and");
     expect(query.params).toContain("org_a");
   });

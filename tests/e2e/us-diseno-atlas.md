@@ -8,7 +8,7 @@
 2. Abrir conversación → responder desde el composer nuevo (Enter envía). ✅
 3. Colapsar el panel de detalles (chevron) → reabrir desde el header del chat;
    preferencia persistida en localStorage. ✅
-4. Conversación con ventana cerrada → aviso + selector de plantilla aprobada. ✅
+4. Conversación Telegram activa → composer disponible sin ventana temporal. ✅
 5. Stepper de etapas en el panel → clic en un paso mueve el lead (PATCH 200)
    y el kanban lo refleja. ✅
 6. Filtros Todas/No leídas y búsqueda en la lista. ✅ (visual)

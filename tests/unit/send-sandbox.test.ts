@@ -2,16 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * FR-031 / FR-082: una conversación de prueba del Laboratorio JAMÁS alcanza
- * la API de WhatsApp — sendText lanza antes de cualquier llamada Graph.
+ * la API de Telegram — sendText lanza antes de cualquier request externo.
  */
 
-const graphRequest = vi.fn();
-
-vi.mock("@/lib/meta/client", async (importOriginal) => {
-  const original =
-    await importOriginal<typeof import("@/lib/meta/client")>();
-  return { ...original, graphRequest };
-});
+const externalRequest = vi.fn();
 
 function makeChain(rows: unknown[]) {
   const chain: Record<string, unknown> = {};
@@ -37,7 +31,8 @@ vi.mock("@/lib/db", () => ({
 
 describe("sandbox del Laboratorio en el sender", () => {
   beforeEach(() => {
-    graphRequest.mockReset();
+    externalRequest.mockReset();
+    vi.stubGlobal("fetch", externalRequest);
     selectRows.length = 0;
   });
 
@@ -50,7 +45,7 @@ describe("sandbox del Laboratorio en el sender", () => {
           isTest: true,
           lastInboundAt: new Date(),
         },
-        contact: { id: "ct_1", phone: "5215511111111" },
+        contact: { id: "ct_1", channel: "test", externalAddress: "5215511111111" },
       },
     ]);
     const { sendText, SendError } = await import("@/server/inbox/send");
@@ -63,7 +58,7 @@ describe("sandbox del Laboratorio en el sender", () => {
       })
     ).rejects.toMatchObject({ code: "sandbox_violation" });
 
-    expect(graphRequest).not.toHaveBeenCalled();
+    expect(externalRequest).not.toHaveBeenCalled();
 
     // sanity: el error es del tipo tipado
     try {
@@ -75,7 +70,7 @@ describe("sandbox del Laboratorio en el sender", () => {
             isTest: true,
             lastInboundAt: new Date(),
           },
-          contact: { id: "ct_1", phone: "5215511111111" },
+          contact: { id: "ct_1", channel: "test", externalAddress: "5215511111111" },
         },
       ]);
       await sendText({
@@ -86,6 +81,6 @@ describe("sandbox del Laboratorio en el sender", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(SendError);
     }
-    expect(graphRequest).not.toHaveBeenCalled();
+    expect(externalRequest).not.toHaveBeenCalled();
   });
 });

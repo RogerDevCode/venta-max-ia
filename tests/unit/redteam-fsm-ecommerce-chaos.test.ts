@@ -17,6 +17,7 @@ const { mockDbState, mockUpdateSet, mockSendText, mockSchema, mockChatJson, mock
       cart: { id: "id", organizationId: "organization_id", conversationId: "conversation_id", status: "status", items: "items" },
       order: { id: "id", organizationId: "organization_id", contactId: "contact_id", conversationId: "conversation_id", cartId: "cart_id", orderNumber: "order_number", items: "items", totalAmount: "total_amount", status: "status" },
       commerceSettings: { organizationId: "organization_id", maxUnitsPerProduct: "max_units_per_product" },
+      commerceOrderCounter: { organizationId: "organization_id", nextValue: "next_value", updatedAt: "updated_at" },
     };
     return {
       mockChatJson: vi.fn(),
@@ -94,6 +95,7 @@ vi.mock("@/lib/db", () => {
           }
           return Promise.resolve([{ id: "msg_test_out" }]);
         },
+        onConflictDoUpdate: () => ({ returning: () => Promise.resolve([{ nextValue: 2n }]) }),
       }),
       onConflictDoNothing: () => ({ returning: () => Promise.resolve([]) }),
     }),

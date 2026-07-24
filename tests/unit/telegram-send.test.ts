@@ -86,7 +86,7 @@ describe("Envío de Menús y Teclados de Telegram (Paso 2.1)", () => {
           organizationId: "org_1",
           isTest: false,
         },
-        contact: { id: "ct_1", phone: "987654321" },
+        contact: { id: "ct_1", channel: "telegram", externalAddress: "987654321" },
       },
     ]);
 
@@ -118,7 +118,7 @@ describe("Envío de Menús y Teclados de Telegram (Paso 2.1)", () => {
 
     // Validar guardado en BD
     expect(insertedMessages.length).toBe(1);
-    expect(insertedMessages[0]!.waMessageId).toBe("tg_987654321_555");
+    expect(insertedMessages[0]!.externalMessageId).toBe("message:987654321:555");
     expect(insertedMessages[0]!.direction).toBe("out");
 
     // Validar emisión SSE
@@ -133,7 +133,7 @@ describe("Envío de Menús y Teclados de Telegram (Paso 2.1)", () => {
           organizationId: "org_1",
           isTest: false,
         },
-        contact: { id: "ct_1", phone: "111222333" },
+        contact: { id: "ct_1", channel: "telegram", externalAddress: "111222333" },
       },
     ]);
 
@@ -166,7 +166,7 @@ describe("Envío de Menús y Teclados de Telegram (Paso 2.1)", () => {
           organizationId: "org_1",
           isTest: true, // Sandbox
         },
-        contact: { id: "ct_1", phone: "999999999" },
+        contact: { id: "ct_1", channel: "telegram", externalAddress: "999999999" },
       },
     ]);
 

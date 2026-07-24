@@ -17,8 +17,8 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata(): Promise<Metadata> {
   const branding = await getBranding().catch(() => DEFAULT_BRANDING);
   return {
-    title: `${branding.name} — CRM de WhatsApp`,
-    description: "CRM de WhatsApp con agente de IA y Laboratorio de auto-evaluación",
+    title: `${branding.name} — CRM de Telegram`,
+    description: "CRM de Telegram con agente de IA y Laboratorio de auto-evaluación",
   };
 }
 

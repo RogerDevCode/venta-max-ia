@@ -73,5 +73,9 @@ fi
 
 echo "==> [RUN] Iniciando servidor Next.js en http://localhost:${PORT} con ${PKG_MANAGER}..."
 export PORT="$PORT"
+export NODE_OPTIONS="${NODE_OPTIONS:-} --dns-result-order=ipv4first"
+if [ -z "${DATABASE_URL:-}" ] || [[ "${DATABASE_URL:-}" == *"neon"* ]]; then
+  export DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/vocero"
+fi
 
 exec $PKG_MANAGER dev

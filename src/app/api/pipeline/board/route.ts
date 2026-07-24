@@ -48,7 +48,8 @@ export const GET = withAuth(async (session) => {
       contact: {
         id: r.contact.id,
         name: r.contact.name,
-        phone: r.contact.phone,
+        channel: r.contact.channel,
+        externalAddress: r.contact.externalAddress,
       },
       conversationId: r.conversationId,
     })),

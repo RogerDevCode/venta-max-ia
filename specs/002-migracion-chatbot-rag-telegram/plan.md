@@ -18,7 +18,7 @@
 
 ---
 
-## 💬 Fase 1: Adaptador de Canal — Migración de WhatsApp a Telegram
+## 💬 Fase 1: Adaptador de Canal — Telegram-only
 *Portar la conectividad de `telegram_service.py` hacia `src/lib/telegram/` en TypeScript, eliminando la ventana de 24h y plantillas.*
 
 - [x] **Paso 1.1: Cliente HTTP de Telegram Bot API (`src/lib/telegram/client.ts`)**
@@ -76,7 +76,7 @@
   - **Acción:** Crear tablas `product`, `category`, `cart` y `order` con `organization_id NOT NULL` + índice `org-first` cumpliendo el Principio III.
   - **Test (5.1):** `pnpm db:generate && pnpm db:migrate`. Test de aislamiento multi-tenant demostrando que `scoped()` impide cruce de productos entre organizaciones.
 - [x] **Paso 5.2: Herramientas de Ventas en el Cerebro de IA (`actions.ts`)**
-  - **Acción:** Definir acciones: `buscar_producto(query)`, `agregar_al_carrito(sku, cantidad)` y `confirmar_pedido()`. Al confirmar pedido, mover automáticamente la tarjeta en el Kanban a la etapa *"Interesado / Pedido"*.
+  - **Acción:** Definir acciones: `buscar_producto(query)`, `agregar_al_carrito(productId, cantidad)` con snapshot visual inmutable y `confirmar_pedido()`. El SKU queda reservado para administración. Al confirmar pedido, mover automáticamente la tarjeta en el Kanban a la etapa *"Interesado / Pedido"*.
   - **Test (5.2):** Test E2E de simulación de compra: la IA recibe la solicitud del cliente, ejecuta `agregar_al_carrito`, crea la orden en la BD y la tarjeta en el Kanban cambia de columna.
 
 ---

@@ -22,10 +22,10 @@ describe("Nuevas Personas Guionadas para el Laboratorio de IA (Paso 6.1)", () =>
     expect(PERSONA_LABELS["cliente_preguntas_rag"]).toBe("Cliente RAG anti-alucinación");
 
     // Ningún teléfono debe colisionar y todos deben iniciar con prefijo de prueba o 521000...
-    const phones = new Set(PERSONAS.map((p) => p.phone));
-    expect(phones.size).toBe(8);
+    const externalAddresss = new Set(PERSONAS.map((p) => p.externalAddress));
+    expect(externalAddresss.size).toBe(8);
     for (const p of PERSONAS) {
-      expect(p.phone).toMatch(/^521000000000\d$/);
+      expect(p.externalAddress).toMatch(/^521000000000\d$/);
     }
   });
 });

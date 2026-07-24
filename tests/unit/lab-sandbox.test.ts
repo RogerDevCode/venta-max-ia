@@ -2,15 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * FR-031/FR-082: el turno del agente sobre una conversación is_test persiste
- * la respuesta en BD y JAMÁS invoca el cliente Graph (spy sobre lib/meta).
+ * la respuesta en BD y JAMÁS invoca ningún transporte externo.
  */
 
-const graphRequest = vi.fn();
-
-vi.mock("@/lib/meta/client", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/lib/meta/client")>();
-  return { ...original, graphRequest };
-});
+const externalRequest = vi.fn();
 
 vi.mock("@/lib/ai", () => ({
   chatJson: vi.fn().mockResolvedValue({
@@ -77,7 +72,8 @@ vi.mock("@/lib/db", () => ({
 
 describe("sandbox del Laboratorio en el pipeline del agente", () => {
   beforeEach(() => {
-    graphRequest.mockReset();
+    externalRequest.mockReset();
+    vi.stubGlobal("fetch", externalRequest);
     selectQueue.length = 0;
     inserts.length = 0;
     vi.stubEnv("PROVIDER_API_TOKEN", "token-test");
@@ -112,7 +108,7 @@ describe("sandbox del Laboratorio en el pipeline del agente", () => {
     const { runAgentTurn } = await import("@/server/ai/pipeline");
     await runAgentTurn("cv_lab");
 
-    expect(graphRequest).not.toHaveBeenCalled();
+    expect(externalRequest).not.toHaveBeenCalled();
     // la respuesta quedó persistida como mensaje saliente ai_generated
     const messageInsert = inserts.find(
       (i) =>

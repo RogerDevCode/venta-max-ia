@@ -18,7 +18,7 @@
    "Pregunta fuera del conocimiento" con hallazgo `fuera_de_kb`, evidencia y
    sugerencia; transcript visible por persona.
    ✅ La persona "Pide un humano" terminó en handoff (guion cortado).
-   ✅ `GET /api/dev/wa-mock/outbox` → VACÍO (ningún mensaje salió a WhatsApp).
+   ✅ El spy de transporte Telegram permanece vacío.
    ✅ Las conversaciones de prueba NO aparecen en la bandeja.
 
 ## Cerrar el loop

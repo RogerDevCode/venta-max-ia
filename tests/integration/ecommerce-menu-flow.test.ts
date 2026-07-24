@@ -36,7 +36,7 @@ async function conversation() {
 describe.sequential("ecommerce menu flow with real PostgreSQL and sandboxed Telegram API", () => {
   beforeAll(async () => {
     await db.insert(schema.organization).values({ id: organizationId, name: "Menu flow test" });
-    await db.insert(schema.contact).values({ id: contactId, organizationId, phone: "900000000010", name: "Menu Test" });
+    await db.insert(schema.contact).values({ id: contactId, organizationId, channel: "test", externalAddress: "900000000010", name: "Menu Test" });
     await db.insert(schema.conversation).values({
       id: conversationId,
       organizationId,
@@ -66,7 +66,7 @@ describe.sequential("ecommerce menu flow with real PostgreSQL and sandboxed Tele
     await processSlashCommand({
       command: "menu:categorias",
       conversation: await conversation(),
-      lastInboundWaId: "tg_900000000010_1",
+      lastInboundExternalId: "tg_900000000010_1",
     });
     const categoryState = (await conversation()).stateMetadata as { numeric_options?: string[] };
     const categoryAction = `catalog:category:${drinksCategoryId}`;
@@ -76,7 +76,7 @@ describe.sequential("ecommerce menu flow with real PostgreSQL and sandboxed Tele
     await processSlashCommand({
       command: `catalog:number:${categoryIndex + 1}`,
       conversation: await conversation(),
-      lastInboundWaId: "tg_900000000010_2",
+      lastInboundExternalId: "tg_900000000010_2",
     });
     const productState = (await conversation()).stateMetadata as {
       catalogCategoryId?: string;
@@ -94,7 +94,7 @@ describe.sequential("ecommerce menu flow with real PostgreSQL and sandboxed Tele
     await processSlashCommand({
       command: `catalog:number:${pepsiIndex + 1}`,
       conversation: await conversation(),
-      lastInboundWaId: "tg_900000000010_3",
+      lastInboundExternalId: "tg_900000000010_3",
     });
     expect((await conversation()).stateMetadata).toMatchObject({
       current_state: "cart:awaiting_quantity",
@@ -105,7 +105,7 @@ describe.sequential("ecommerce menu flow with real PostgreSQL and sandboxed Tele
     await expect(processPendingProductQuantity({
       conversation: await conversation(),
       text: "2",
-      lastInboundWaId: "tg_900000000010_4",
+      lastInboundExternalId: "tg_900000000010_4",
     })).resolves.toBe(true);
 
     const carts = await db.select().from(schema.cart).where(and(

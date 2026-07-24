@@ -139,7 +139,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       const result = await processSlashCommand({
         command: "menu",
         conversation: mockDbState.conversation as never,
-        lastInboundWaId: "tg_12345",
+        lastInboundExternalId: "tg_12345",
       });
 
       expect(result.handled).toBe(true);
@@ -170,7 +170,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       const result = await processSlashCommand({
         command: "menu:categorias",
         conversation: mockDbState.conversation as never,
-        lastInboundWaId: "tg_12345",
+        lastInboundExternalId: "tg_12345",
       });
 
       expect(result.handled).toBe(true);
@@ -191,7 +191,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       await processSlashCommand({
         command: "menu:categorias",
         conversation: mockDbState.conversation as never,
-        lastInboundWaId: "tg_12345",
+        lastInboundExternalId: "tg_12345",
       });
       const categoryState = (mockUpdateSet.mock.calls.at(-1)?.[0] as { stateMetadata: Record<string, unknown> }).stateMetadata;
       expect(categoryState).toMatchObject({
@@ -213,7 +213,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       await processSlashCommand({
         command: "catalog:number:2",
         conversation: mockDbState.conversation as never,
-        lastInboundWaId: "tg_12345",
+        lastInboundExternalId: "tg_12345",
       });
       expect(mockListCatalogProducts).toHaveBeenCalledWith("org_cmd_123", "cat_bebidas");
       const productState = (mockUpdateSet.mock.calls.at(-1)?.[0] as { stateMetadata: Record<string, unknown> }).stateMetadata;
@@ -240,7 +240,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       await processSlashCommand({
         command: "catalog:number:3",
         conversation: mockDbState.conversation as never,
-        lastInboundWaId: "tg_12345",
+        lastInboundExternalId: "tg_12345",
       });
       expect(mockGetProduct).toHaveBeenCalledWith("org_cmd_123", "prod_pepsi");
       expect(mockSendText).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -256,7 +256,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       await processSlashCommand({
         command: "catalog:category:cat_1",
         conversation: mockDbState.conversation as never,
-        lastInboundWaId: "tg_12345",
+        lastInboundExternalId: "tg_12345",
       });
       const call = mockSendText.mock.calls.at(-1)?.[0] as { text: string; replyMarkup: unknown };
       expect(call.text).toContain("1. Coca-Cola — 2 litros — $2.500 CLP");
@@ -276,7 +276,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       });
       await processSlashCommand({
         command: "catalog:product:prod_1", conversation: mockDbState.conversation as never,
-        lastInboundWaId: "tg_12345",
+        lastInboundExternalId: "tg_12345",
       });
       expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
         stateMetadata: expect.objectContaining({ current_state: "cart:awaiting_quantity", selectedProductId: "prod_1" }),
@@ -307,7 +307,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       await processSlashCommand({
         command: "catalog:number:3",
         conversation: mockDbState.conversation as never,
-        lastInboundWaId: "tg_12345",
+        lastInboundExternalId: "tg_12345",
       });
 
       expect(mockGetProduct).toHaveBeenCalledWith("org_cmd_123", "prod_pepsi");
@@ -325,7 +325,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       await processSlashCommand({
         command: "menu:promociones",
         conversation: mockDbState.conversation as never,
-        lastInboundWaId: "tg_12345",
+        lastInboundExternalId: "tg_12345",
       });
       expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
         stateMetadata: expect.objectContaining({
@@ -350,7 +350,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
         ok: true, product: { name: "Coca-Cola", description: "2 litros" }, units: 2, totalAmount: 5000,
       });
       await expect(processPendingProductQuantity({
-        conversation: mockDbState.conversation as never, text: "2", lastInboundWaId: "tg_12345",
+        conversation: mockDbState.conversation as never, text: "2", lastInboundExternalId: "tg_12345",
       })).resolves.toBe(true);
       expect(mockAddProduct).toHaveBeenCalledWith(expect.objectContaining({ productId: "prod_1", quantity: 2 }));
       expect(mockSendText).toHaveBeenCalledWith(expect.objectContaining({
@@ -376,7 +376,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       });
       await processSlashCommand({
         command: "cart:checkout", conversation: mockDbState.conversation as never,
-        lastInboundWaId: "tg_12345",
+        lastInboundExternalId: "tg_12345",
       });
       expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
         stateMetadata: expect.objectContaining({
@@ -404,7 +404,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       mockGetOrder.mockResolvedValueOnce(order);
       await processSlashCommand({
         command: "menu:pedidos", conversation: mockDbState.conversation as never,
-        lastInboundWaId: "tg_12345",
+        lastInboundExternalId: "tg_12345",
       });
       expect(mockSendText).toHaveBeenCalledWith(expect.objectContaining({
         text: expect.stringContaining("Pedido N° ORD-100"),
@@ -421,7 +421,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       ]);
       await processSlashCommand({
         command: "menu:pedidos", conversation: mockDbState.conversation as never,
-        lastInboundWaId: "tg_12345",
+        lastInboundExternalId: "tg_12345",
       });
       expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
         stateMetadata: expect.objectContaining({
@@ -439,7 +439,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       const result = await processSlashCommand({
         command: "menu:humano",
         conversation: mockDbState.conversation as never,
-        lastInboundWaId: "tg_12345",
+        lastInboundExternalId: "tg_12345",
       });
 
       expect(result.handled).toBe(true);

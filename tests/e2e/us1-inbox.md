@@ -1,7 +1,7 @@
-# Guion E2E — US1: Bandeja de WhatsApp en tiempo real
+# Guion E2E — US1: Bandeja de Telegram en tiempo real
 
 > Conducido con Playwright (MCP) contra `pnpm dev` con el entorno de pruebas
-> interno activo (`WA_MOCK_ENABLED=true`, `META_GRAPH_BASE_URL` → wa-mock).
+> bot canary aislado y chat privado autorizado.
 > Requiere: usuario registrado y número conectado (mock, phoneNumberId `123456789`).
 
 ## Preparación
@@ -26,12 +26,12 @@
 
 ## Caminos infelices
 
-8. **Dedup (SC-004)**: enviar dos veces el mismo `waMessageId` `wamid.dedup.1`.
+8. **Dedup (SC-004)**: enviar dos veces el mismo `externalMessageId` de Telegram.
    ✅ El hilo muestra UNA sola vez el mensaje.
 9. **Ventana cerrada (SC-005)**: inbound de contacto nuevo con
    `timestamp` de hace 25 horas → abrir su conversación.
    ✅ El composer está bloqueado con la explicación de la ventana y ofrece
-   plantillas (estado vacío si no hay aprobadas).
+   envío de texto y menús Telegram.
    ✅ `POST /api/conversations/:id/messages` responde 409 `window_closed`.
 10. **Webhook segmento incorrecto**: `POST /api/webhooks/wa/token-falso` → 404
     y no aparece nada nuevo en la bandeja.

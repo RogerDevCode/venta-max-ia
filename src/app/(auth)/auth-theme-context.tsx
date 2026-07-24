@@ -94,13 +94,13 @@ export function ThemeBackgroundGrid() {
       {/* Luces ambientales adaptativas al tema */}
       <div
         className={cn(
-          "absolute -top-40 -left-40 w-96 h-96 rounded-full blur-3xl pointer-events-none animate-pulse duration-[7000ms] transition-colors duration-500 z-0",
+          "absolute -top-40 -left-40 w-96 h-96 rounded-full blur-3xl pointer-events-none animate-pulse [animation-duration:7000ms] transition-colors duration-500 z-0",
           theme === "dark" ? "bg-blue-600/15" : "bg-blue-600/25"
         )}
       />
       <div
         className={cn(
-          "absolute top-1/3 -right-32 w-80 h-80 rounded-full blur-3xl pointer-events-none animate-pulse duration-[10000ms] transition-colors duration-500 z-0",
+          "absolute top-1/3 -right-32 w-80 h-80 rounded-full blur-3xl pointer-events-none animate-pulse [animation-duration:10000ms] transition-colors duration-500 z-0",
           theme === "dark" ? "bg-amber-600/10" : "bg-amber-600/20"
         )}
       />
