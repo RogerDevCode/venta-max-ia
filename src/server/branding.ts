@@ -23,7 +23,6 @@ function parseMetadata(metadata: string | null): Record<string, unknown> {
 
 const BRANDING_TTL_MS = 30000;
 declare global {
-  // eslint-disable-next-line no-var
   var __brandingCache: Map<string, { branding: Branding; expiresAt: number }> | undefined;
 }
 function getBrandingCache() {

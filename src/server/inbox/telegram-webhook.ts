@@ -1,5 +1,5 @@
-import { safeEqual } from "@/server/inbox/webhook";
-import { ingestInboundMessage } from "@/server/inbox/ingest";
+import { safeEqual } from "@/server/security/safe-equal";
+import { ingestTelegramMessage } from "@/server/inbox/ingest";
 import { answerCallbackQuery, sendChatAction } from "@/lib/telegram/client";
 import { getTelegramCredentialsByOrg } from "@/server/telegram/credentials";
 import { acceptTelegramMenuCallback } from "@/server/telegram/menu-guard";
@@ -62,13 +62,17 @@ export function isValidTelegramWebhookToken(
  */
 export async function processTelegramUpdate(input: {
   organizationId: string;
+  integrationId: string;
   update: TelegramUpdate;
 }): Promise<void> {
-  const { organizationId, update } = input;
+  const { organizationId, integrationId, update } = input;
 
   // 1. Intercepción de clics en menús (callback_query) - Paso 2.2
   if (update.callback_query) {
     const cb = update.callback_query;
+    if (!cb.message || cb.message.chat.type !== "private" || String(cb.message.chat.id) !== String(cb.from.id)) {
+      return;
+    }
     const chatId = String(cb.message?.chat.id ?? cb.from.id);
     const queryId = cb.id;
     const profileName = [cb.from.first_name, cb.from.last_name]
@@ -110,6 +114,9 @@ export async function processTelegramUpdate(input: {
   if (!message) {
     return;
   }
+  if (message.chat.type !== "private" || !message.from || String(message.chat.id) !== String(message.from.id)) {
+    return;
+  }
 
   const chatId = String(message.chat.id);
   const messageId = String(message.message_id);
@@ -121,16 +128,22 @@ export async function processTelegramUpdate(input: {
     .join(" ")
     .trim() || null;
 
-  const channelMessageId = `tg_${chatId}_${messageId}`;
+  const channelMessageId = `message:${chatId}:${messageId}`;
 
   // Disparar señal de escritura en T=0ms sin bloquear
-  void sendChatAction({ chatId, action: "typing" }).catch(() => {});
+  const credentials = await getTelegramCredentialsByOrg(organizationId);
+  if (credentials?.status === "connected") {
+    void sendChatAction({ chatId, action: "typing", token: credentials.token }).catch((error) =>
+      console.error("[telegram] typing falló:", error)
+    );
+  }
 
-  await ingestInboundMessage({
+  await ingestTelegramMessage({
     organizationId,
+    integrationId,
     from: chatId,
     profileName: profileName || `Telegram ${chatId}`,
-    waMessageId: channelMessageId,
+    externalMessageId: channelMessageId,
     type: message.text !== undefined ? "text" : "unknown",
     text: message.text ?? null,
     timestamp: String(message.date ?? Math.floor(Date.now() / 1000)),

@@ -34,7 +34,7 @@ function EmptyState({ onSeeded }: { onSeeded: () => void }) {
     <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
       <p className="text-sm font-medium">Sin conversaciones todavía</p>
       <p className="text-xs text-text-3">
-        Cuando alguien escriba a tu número de WhatsApp, su conversación
+        Cuando alguien escriba a tu bot de Telegram, su conversación
         aparecerá aquí en tiempo real.
       </p>
       {!failed && (
@@ -73,7 +73,7 @@ export function ConversationList({
     ? conversations.filter(
         (c) =>
           c.contact.name.toLowerCase().includes(q) ||
-          c.contact.phone.includes(q) ||
+          c.contact.externalAddress.includes(q) ||
           (c.preview ?? "").toLowerCase().includes(q)
       )
     : conversations;

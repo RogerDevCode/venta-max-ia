@@ -21,6 +21,7 @@ import {
 } from "@/server/ecommerce/service";
 import { preloadCatalogCache } from "@/server/ecommerce/cache";
 import { customerProductLabel, parsePositiveInteger } from "@/server/ecommerce/quantity";
+import { renderPriceDisclosure } from "@/server/ecommerce/pricing";
 import { enterMenuState, resolveMenuInput, type MenuStateMetadata } from "@/server/ai/menu-fsm";
 
 export type SlashCommandType =
@@ -89,7 +90,7 @@ type Conversation = typeof schema.conversation.$inferSelect;
 
 /**
  * Constante del Menú Principal Transaccional (migrado desde chatbot)
- * Optimizado para 2 columnas en Telegram Inline Keyboard y lista ordenada en WhatsApp.
+ * Optimizado para 2 columnas en Telegram Inline Keyboard.
  */
 export function buildMainMenuMarkup(): { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> } {
   return {
@@ -114,20 +115,20 @@ export function buildMainMenuMarkup(): { inline_keyboard: Array<Array<{ text: st
 export async function processSlashCommand(input: {
   command: SlashCommandType;
   conversation: Conversation;
-  lastInboundWaId?: string | null;
+  lastInboundExternalId?: string | null;
   profile?: typeof schema.agentProfile.$inferSelect | null;
   navigationStack?: string[];
 }): Promise<{ handled: boolean }> {
-  const { command, conversation, lastInboundWaId } = input;
+  const { command, conversation } = input;
   const { organizationId, id: conversationId } = conversation;
   const db = getDb();
-  const channel = lastInboundWaId?.startsWith("tg_") ? "telegram" : "wa";
+  const channel = "telegram" as const;
 
   // Precarga asíncrona no bloqueante del catálogo y stock en paralelo mientras se muestra el menú/comando
   void preloadCatalogCache(organizationId).catch(() => {});
 
   const currentState = ((conversation.stateMetadata as MenuStateMetadata) ?? {});
-  const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
+  const isTelegram = true;
   const navigationRow = [
     { text: "⌂ Inicio", callback_data: "nav:home" },
     { text: "↩ Retornar", callback_data: "nav:back" },
@@ -525,7 +526,10 @@ export async function processSlashCommand(input: {
       await deliverCommandReply(conversation, text, { channel });
       return { handled: true };
     }
-    await deliverCommandReply(conversation, `✅ Pedido confirmado. Número: ${result.order.orderNumber}.`, { channel });
+    if (result.priceChanges?.length) {
+      await deliverCommandReply(conversation, renderPriceDisclosure(result.priceChanges, result.order.totalAmount), { channel });
+    }
+    await deliverCommandReply(conversation, `✅ Pedido confirmado. Número: ${result.order.orderNumber}. Total definitivo: $${result.order.totalAmount.toLocaleString("es-CL")} CLP.`, { channel });
     return processSlashCommand({
       ...input,
       command: `order:detail:${result.order.id}`,
@@ -578,7 +582,7 @@ export async function processSlashCommand(input: {
           `He reiniciado la conversación. ¿En qué te puedo ayudar hoy?\n\n` +
           `Puedes escribirme lo que buscas o elegir una opción del menú.`;
 
-      const isTelegram = lastInboundWaId?.startsWith("tg_") ?? false;
+      const isTelegram = true;
       if (isTelegram) {
         await deliverCommandReply(conversation, welcomeText, { replyMarkup: buildMainMenuMarkup(), channel });
       } else {
@@ -748,12 +752,12 @@ export async function processSlashCommand(input: {
 export async function processPendingProductQuantity(input: {
   conversation: Conversation;
   text: string;
-  lastInboundWaId?: string | null;
+  lastInboundExternalId?: string | null;
 }): Promise<boolean> {
   const state = (input.conversation.stateMetadata ?? {}) as Record<string, unknown>;
   if (state.current_state !== "cart:awaiting_quantity") return false;
   const organizationId = input.conversation.organizationId;
-  const channel = input.lastInboundWaId?.startsWith("tg_") ? "telegram" : "wa";
+  const channel = "telegram" as const;
   const productId = typeof state.selectedProductId === "string" ? state.selectedProductId : null;
   const quantity = parsePositiveInteger(input.text);
   if (!productId) return false;
@@ -809,7 +813,7 @@ export async function processPendingProductQuantity(input: {
   await processSlashCommand({
     command: "menu:carrito",
     conversation: { ...input.conversation, stateMetadata: cartState },
-    lastInboundWaId: input.lastInboundWaId,
+    lastInboundExternalId: input.lastInboundExternalId,
     navigationStack: cartState.menu_stack,
   });
   return true;
@@ -818,7 +822,7 @@ export async function processPendingProductQuantity(input: {
 async function deliverCommandReply(
   conversation: Conversation,
   text: string,
-  opts?: { replyMarkup?: unknown; channel?: "wa" | "telegram" }
+  opts?: { replyMarkup?: unknown; channel?: "telegram" }
 ): Promise<void> {
   if (conversation.isTest) {
     const db = getDb();

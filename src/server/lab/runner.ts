@@ -197,7 +197,7 @@ async function runConversation(
       type: "text",
       text: line,
       status: "delivered",
-      waTimestamp: now,
+      externalTimestamp: now,
     });
     await db
       .update(schema.conversation)
@@ -242,12 +242,13 @@ async function upsertTestContact(
     .values({
       id: newId("contact"),
       organizationId,
-      phone: persona.phone,
+      externalAddress: persona.externalAddress,
+      channel: "test",
       name: persona.contactName,
       archivedAt: new Date(),
     })
     .onConflictDoNothing({
-      target: [schema.contact.organizationId, schema.contact.phone],
+      target: [schema.contact.organizationId, schema.contact.channel, schema.contact.externalAddress],
     })
     .returning();
   if (inserted[0]) return inserted[0].id;
@@ -257,7 +258,8 @@ async function upsertTestContact(
     .where(
       and(
         eq(schema.contact.organizationId, organizationId),
-        eq(schema.contact.phone, persona.phone)
+        eq(schema.contact.channel, "test"),
+        eq(schema.contact.externalAddress, persona.externalAddress)
       )
     )
     .limit(1);

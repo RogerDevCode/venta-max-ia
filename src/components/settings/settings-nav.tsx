@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const TABS = [
-  { href: "/settings/whatsapp", label: "WhatsApp" },
+  { href: "/settings/whatsapp", label: "WhatsApp (deshabilitado)" },
   { href: "/settings/telegram", label: "Telegram" },
   { href: "/settings/branding", label: "Marca" },
   { href: "/settings/catalog", label: "Catálogo" },
@@ -17,8 +17,8 @@ export function SettingsNav() {
   return (
     <nav className="w-44 shrink-0 space-y-1 border-r border-border/80 bg-subtle/40 backdrop-blur-sm p-3 transition-colors duration-500">
       {TABS.map((t) => t.href === "/settings/whatsapp" ? (
-        <span key={t.href} aria-disabled="true" title="WhatsApp está deshabilitado" className="block cursor-not-allowed rounded-md px-3 py-2 text-sm font-medium text-text-4">
-          {t.label} <span className="text-xs">(deshabilitado)</span>
+        <span key={t.href} aria-disabled="true" title="Canal deshabilitado" className="block cursor-not-allowed rounded-md px-3 py-2 text-sm font-medium text-text-4">
+          {t.label}
         </span>
       ) : (
         <Link

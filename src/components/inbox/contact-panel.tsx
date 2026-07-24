@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, ChevronRight, Sparkles, UserRound } from "lucide-react";
 import type { ConversationDto, StageDto } from "@/lib/types";
-import { cn, formatPhone } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -145,7 +145,7 @@ export function ContactPanel({
                 {conversation.contact.name}
               </p>
               <p className="text-xs text-text-3">
-                {formatPhone(conversation.contact.phone)}
+                Telegram ID: {conversation.contact.externalAddress}
               </p>
             </div>
           </div>

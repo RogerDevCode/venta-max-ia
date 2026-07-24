@@ -114,7 +114,8 @@ export const contact = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    phone: text("phone").notNull(),
+    channel: text("channel", { enum: ["telegram", "test", "retired_whatsapp"] }).notNull(),
+    externalAddress: text("external_address").notNull(),
     name: text("name").notNull(),
     notes: text("notes"),
     archivedAt: timestamp("archived_at"),
@@ -122,7 +123,7 @@ export const contact = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("contact_org_phone_uq").on(t.organizationId, t.phone),
+    uniqueIndex("contact_org_channel_address_uq").on(t.organizationId, t.channel, t.externalAddress),
     index("contact_org_name_idx").on(t.organizationId, t.name),
   ]
 );
@@ -179,7 +180,7 @@ export const conversation = pgTable(
     contactId: text("contact_id")
       .notNull()
       .references(() => contact.id, { onDelete: "cascade" }),
-    /** Conversación del Laboratorio: jamás toca la API de WhatsApp. */
+    /** Conversación del Laboratorio: jamás toca la API de Telegram. */
     isTest: boolean("is_test").notNull().default(false),
     aiEnabled: boolean("ai_enabled").notNull().default(true),
     handoffAt: timestamp("handoff_at"),
@@ -192,6 +193,7 @@ export const conversation = pgTable(
     stateMetadata: jsonb("state_metadata")
       .$type<Record<string, unknown>>()
       .default({}),
+    fsmRevision: bigint("fsm_revision", { mode: "number" }).notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -214,8 +216,9 @@ export const message = pgTable(
     conversationId: text("conversation_id")
       .notNull()
       .references(() => conversation.id, { onDelete: "cascade" }),
-    /** ID de WhatsApp — UNIQUE (idempotencia). Nullable en salientes de prueba. */
-    waMessageId: text("wa_message_id").unique(),
+    channel: text("channel", { enum: ["telegram"] }).notNull().default("telegram"),
+    integrationId: text("integration_id"),
+    externalMessageId: text("external_message_id"),
     direction: text("direction", { enum: ["in", "out"] }).notNull(),
     type: text("type").notNull().default("text"),
     text: text("text"),
@@ -226,7 +229,7 @@ export const message = pgTable(
       .default("pending"),
     error: text("error"),
     aiGenerated: boolean("ai_generated").notNull().default(false),
-    waTimestamp: timestamp("wa_timestamp"),
+    externalTimestamp: timestamp("external_timestamp"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -235,33 +238,9 @@ export const message = pgTable(
       t.conversationId,
       t.createdAt
     ),
-  ]
-);
-
-export const metaCredentials = pgTable(
-  "meta_credentials",
-  {
-    id: text("id").primaryKey(),
-    organizationId: text("organization_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    wabaId: text("waba_id").notNull(),
-    phoneNumberId: text("phone_number_id").notNull(),
-    displayPhoneNumber: text("display_phone_number"),
-    verifiedName: text("verified_name"),
-    tokenCipher: text("token_cipher").notNull(),
-    tokenIv: text("token_iv").notNull(),
-    tokenTag: text("token_tag").notNull(),
-    status: text("status", { enum: ["connected", "reconnect_required"] })
-      .notNull()
-      .default("connected"),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-    updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  },
-  (t) => [
-    uniqueIndex("meta_credentials_org_uq").on(t.organizationId),
-    // El webhook enruta por phone_number_id: debe ser único en la instancia.
-    uniqueIndex("meta_credentials_phone_uq").on(t.phoneNumberId),
+    uniqueIndex("message_org_integration_external_uq")
+      .on(t.organizationId, t.integrationId, t.externalMessageId)
+      .where(sql`${t.integrationId} is not null and ${t.externalMessageId} is not null`),
   ]
 );
 
@@ -274,18 +253,32 @@ export const telegramIntegration = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     webhookTokenHash: text("webhook_token_hash").notNull(),
+    webhookHeaderSecretHash: text("webhook_header_secret_hash"),
+    webhookRouteSecretCipher: text("webhook_route_secret_cipher"),
+    webhookRouteSecretIv: text("webhook_route_secret_iv"),
+    webhookRouteSecretTag: text("webhook_route_secret_tag"),
+    webhookHeaderSecretCipher: text("webhook_header_secret_cipher"),
+    webhookHeaderSecretIv: text("webhook_header_secret_iv"),
+    webhookHeaderSecretTag: text("webhook_header_secret_tag"),
+    previousWebhookRouteSecretCipher: text("previous_webhook_route_secret_cipher"),
+    previousWebhookRouteSecretIv: text("previous_webhook_route_secret_iv"),
+    previousWebhookRouteSecretTag: text("previous_webhook_route_secret_tag"),
+    previousWebhookHeaderSecretCipher: text("previous_webhook_header_secret_cipher"),
+    previousWebhookHeaderSecretIv: text("previous_webhook_header_secret_iv"),
+    previousWebhookHeaderSecretTag: text("previous_webhook_header_secret_tag"),
     tokenCipher: text("token_cipher"),
     tokenIv: text("token_iv"),
     tokenTag: text("token_tag"),
     botId: bigint("bot_id", { mode: "number" }),
     botUsername: text("bot_username"),
-    status: text("status", { enum: ["connected", "reconnect_required"] }).notNull().default("reconnect_required"),
+    status: text("status", { enum: ["pending", "header_pending", "connected", "reconnect_required", "failed"] }).notNull().default("reconnect_required"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex("telegram_integration_org_uq").on(t.organizationId),
     uniqueIndex("telegram_integration_token_hash_uq").on(t.webhookTokenHash),
+    uniqueIndex("telegram_integration_bot_id_uq").on(t.botId),
   ]
 );
 
@@ -302,15 +295,41 @@ export const telegramWebhookReceipt = pgTable(
       .references(() => telegramIntegration.id, { onDelete: "cascade" }),
     updateId: bigint("update_id", { mode: "number" }).notNull(),
     payloadHash: text("payload_hash").notNull(),
-    status: text("status", { enum: ["received", "conflict"] })
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    conversationId: text("conversation_id").references(() => conversation.id, { onDelete: "set null" }),
+    expectedFsmRevision: bigint("expected_fsm_revision", { mode: "number" }),
+    expectedFsmStateKey: text("expected_fsm_state_key"),
+    status: text("status", { enum: ["received", "processing", "processed", "ignored", "retryable_failed", "failed", "conflict"] })
       .notNull()
       .default("received"),
+    attempts: integer("attempts").notNull().default(0),
+    availableAt: timestamp("available_at").notNull().defaultNow(),
+    leaseExpiresAt: timestamp("lease_expires_at"),
+    lastError: text("last_error"),
+    ignoredReason: text("ignored_reason"),
     receivedAt: timestamp("received_at").notNull().defaultNow(),
     processedAt: timestamp("processed_at"),
   },
   (t) => [
-    uniqueIndex("telegram_receipt_org_update_uq").on(t.organizationId, t.updateId),
+    uniqueIndex("telegram_receipt_integration_update_uq").on(t.organizationId, t.integrationId, t.updateId),
+    index("telegram_receipt_org_status_available_idx").on(t.organizationId, t.status, t.availableAt),
     index("telegram_receipt_org_received_idx").on(t.organizationId, t.receivedAt),
+  ]
+);
+
+export const telegramWebhookRejection = pgTable(
+  "telegram_webhook_rejection",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+    integrationId: text("integration_id").notNull().references(() => telegramIntegration.id, { onDelete: "cascade" }),
+    payloadHash: text("payload_hash").notNull(),
+    reason: text("reason", { enum: ["malformed", "oversized"] }).notNull(),
+    receivedAt: timestamp("received_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("telegram_rejection_org_integration_hash_uq").on(t.organizationId, t.integrationId, t.payloadHash),
+    index("telegram_rejection_org_received_idx").on(t.organizationId, t.receivedAt),
   ]
 );
 
@@ -324,6 +343,7 @@ export const telegramMenuInstance = pgTable(
     telegramMessageId: bigint("telegram_message_id", { mode: "number" }),
     generation: bigint("generation", { mode: "number" }).notNull(),
     fsbState: text("fsb_state").notNull(),
+    fsmRevision: bigint("fsm_revision", { mode: "number" }).notNull().default(0),
     allowedActions: jsonb("allowed_actions").$type<string[]>().notNull(),
     status: text("status", { enum: ["pending", "delivered", "active", "consumed", "superseded", "failed"] }).notNull().default("pending"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -345,6 +365,7 @@ export const telegramMenuAction = pgTable(
     organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
     conversationId: text("conversation_id").notNull().references(() => conversation.id, { onDelete: "cascade" }),
     menuInstanceId: text("menu_instance_id").notNull().references(() => telegramMenuInstance.id, { onDelete: "cascade" }),
+    receiptId: text("receipt_id").references(() => telegramWebhookReceipt.id, { onDelete: "cascade" }),
     callbackQueryId: text("callback_query_id").notNull(),
     telegramUpdateId: bigint("telegram_update_id", { mode: "number" }).notNull(),
     action: text("action").notNull(),
@@ -353,13 +374,47 @@ export const telegramMenuAction = pgTable(
     availableAt: timestamp("available_at").notNull().defaultNow(),
     leaseExpiresAt: timestamp("lease_expires_at"),
     lastError: text("last_error"),
+    ignoredReason: text("ignored_reason"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     processedAt: timestamp("processed_at"),
   },
   (t) => [
     uniqueIndex("telegram_menu_action_org_callback_uq").on(t.organizationId, t.callbackQueryId),
+    uniqueIndex("telegram_menu_action_org_receipt_uq").on(t.organizationId, t.receiptId),
     uniqueIndex("telegram_menu_action_org_instance_uq").on(t.organizationId, t.menuInstanceId),
     index("telegram_menu_action_org_status_available_idx").on(t.organizationId, t.status, t.availableAt),
+  ]
+);
+
+export const telegramOutbox = pgTable(
+  "telegram_outbox",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+    integrationId: text("integration_id").notNull().references(() => telegramIntegration.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id").notNull().references(() => conversation.id, { onDelete: "cascade" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    kind: text("kind", { enum: ["message", "menu", "confirmation", "repricing", "cancellation", "recovery", "typing"] }).notNull(),
+    sequence: bigint("sequence", { mode: "number" }).notNull(),
+    dependsOnId: text("depends_on_id"),
+    text: text("text"),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    replyMarkup: jsonb("reply_markup").$type<Record<string, unknown>>(),
+    fsmRevision: bigint("fsm_revision", { mode: "number" }).notNull(),
+    status: text("status", { enum: ["pending", "sending", "delivered", "retryable_failed", "delivery_unknown", "failed", "superseded"] }).notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    availableAt: timestamp("available_at").notNull().defaultNow(),
+    leaseExpiresAt: timestamp("lease_expires_at"),
+    telegramMessageId: bigint("telegram_message_id", { mode: "number" }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    deliveredAt: timestamp("delivered_at"),
+  },
+  (t) => [
+    uniqueIndex("telegram_outbox_org_idempotency_uq").on(t.organizationId, t.idempotencyKey),
+    uniqueIndex("telegram_outbox_org_conv_sequence_uq").on(t.organizationId, t.conversationId, t.sequence),
+    index("telegram_outbox_org_status_available_idx").on(t.organizationId, t.status, t.availableAt),
+    index("telegram_outbox_org_conv_sequence_idx").on(t.organizationId, t.conversationId, t.sequence),
   ]
 );
 
@@ -400,36 +455,6 @@ export const kbEntry = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [index("kb_org_idx").on(t.organizationId)]
-);
-
-export const template = pgTable(
-  "template",
-  {
-    id: text("id").primaryKey(),
-    organizationId: text("organization_id")
-      .notNull()
-      .references(() => organization.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    language: text("language").notNull(),
-    category: text("category").notNull(),
-    body: text("body").notNull(),
-    status: text("status", {
-      enum: ["draft", "pending", "approved", "rejected"],
-    })
-      .notNull()
-      .default("draft"),
-    rejectionReason: text("rejection_reason"),
-    waTemplateId: text("wa_template_id"),
-    createdAt: timestamp("created_at").notNull().defaultNow(),
-    updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  },
-  (t) => [
-    uniqueIndex("template_org_name_lang_uq").on(
-      t.organizationId,
-      t.name,
-      t.language
-    ),
-  ]
 );
 
 export const agentTestRun = pgTable(
@@ -570,12 +595,27 @@ export const cart = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
+    uniqueIndex("cart_org_conv_active_uq")
+      .on(t.organizationId, t.conversationId)
+      .where(sql`${t.status} = 'active'`),
     index("cart_org_conv_status_idx").on(
       t.organizationId,
       t.conversationId,
       t.status
     ),
   ]
+);
+
+export const commerceOrderCounter = pgTable(
+  "commerce_order_counter",
+  {
+    organizationId: text("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    nextValue: bigint("next_value", { mode: "bigint" }).notNull().default(sql`1`),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [check("commerce_order_counter_next_positive", sql`${t.nextValue} > 0`)]
 );
 
 export const order = pgTable(

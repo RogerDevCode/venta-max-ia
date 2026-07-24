@@ -2,28 +2,13 @@ import { and, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { publish } from "@/server/events/bus";
-import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
-import type { WebhookValue } from "@/server/inbox/webhook";
-import { applyStatusUpdate } from "@/server/inbox/status";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
 import { maybeRunAgentTurn } from "@/server/ai/trigger";
 import { parseSlashCommand } from "@/server/ai/commands";
 
-/** Tipos de contenido soportados; el resto se ignora sin error. */
-const SUPPORTED_TYPES = new Set([
-  "text",
-  "image",
-  "audio",
-  "video",
-  "document",
-  "sticker",
-  "location",
-  "contacts",
-]);
-
 export async function getOrCreateContact(
   organizationId: string,
-  phone: string,
+  externalAddress: string,
   name?: string | null
 ) {
   const db = getDb();
@@ -32,11 +17,12 @@ export async function getOrCreateContact(
     .values({
       id: newId("contact"),
       organizationId,
-      phone,
-      name: name?.trim() || phone,
+      channel: "telegram",
+      externalAddress,
+      name: name?.trim() || externalAddress,
     })
     .onConflictDoNothing({
-      target: [schema.contact.organizationId, schema.contact.phone],
+      target: [schema.contact.organizationId, schema.contact.channel, schema.contact.externalAddress],
     })
     .returning();
   if (inserted[0]) return { contact: inserted[0], isNew: true };
@@ -47,7 +33,8 @@ export async function getOrCreateContact(
     .where(
       and(
         eq(schema.contact.organizationId, organizationId),
-        eq(schema.contact.phone, phone)
+        eq(schema.contact.channel, "telegram"),
+        eq(schema.contact.externalAddress, externalAddress)
       )
     )
     .limit(1);
@@ -93,53 +80,12 @@ export async function getOrCreateConversation(
   return existing;
 }
 
-/**
- * Procesa el `value` de un cambio `messages` del webhook: mensajes entrantes
- * (idempotentes por wa_message_id) y actualizaciones de estado.
- */
-export async function processMessagesValue(value: WebhookValue): Promise<void> {
-  const phoneNumberId = value.metadata?.phone_number_id;
-  if (!phoneNumberId) return;
-
-  const credentials = await getCredentialsByPhoneNumberId(phoneNumberId);
-  if (!credentials) {
-    // Caso típico: webhook/override configurado ANTES de guardar la conexión
-    // en el wizard — el evento llega pero no hay a qué organización enrutarlo.
-    console.warn(
-      `[webhook] evento para phone_number_id desconocido (${phoneNumberId}): ` +
-        "guarda la conexión en Configuración → WhatsApp para recibir mensajes"
-    );
-    return;
-  }
-
-  const organizationId = credentials.organizationId;
-
-  for (const status of value.statuses ?? []) {
-    await applyStatusUpdate(organizationId, status);
-  }
-
-  for (const msg of value.messages ?? []) {
-    if (!SUPPORTED_TYPES.has(msg.type)) continue; // reacciones, etc.: ignorar
-    const profileName = value.contacts?.find(
-      (c) => c.wa_id === msg.from
-    )?.profile?.name;
-    await ingestInboundMessage({
-      organizationId,
-      from: msg.from,
-      profileName: profileName ?? null,
-      waMessageId: msg.id,
-      type: msg.type,
-      text: msg.text?.body ?? null,
-      timestamp: msg.timestamp,
-    });
-  }
-}
-
-export async function ingestInboundMessage(input: {
+export async function ingestTelegramMessage(input: {
   organizationId: string;
+  integrationId: string;
   from: string;
   profileName: string | null;
-  waMessageId: string;
+  externalMessageId: string;
   type: string;
   text: string | null;
   timestamp: string;
@@ -157,23 +103,28 @@ export async function ingestInboundMessage(input: {
     contact.id
   );
 
-  const waTimestamp = toDate(input.timestamp);
+  const externalTimestamp = toDate(input.timestamp);
 
-  // Idempotencia dura: mismo wa_message_id → sin efectos adicionales.
+  // Idempotencia dura por organización, integración e ID externo.
   const inserted = await db
     .insert(schema.message)
     .values({
       id: newId("message"),
       organizationId,
       conversationId: conversation.id,
-      waMessageId: input.waMessageId,
+      channel: "telegram",
+      integrationId: input.integrationId,
+      externalMessageId: input.externalMessageId,
       direction: "in",
       type: input.type,
       text: input.text,
       status: "delivered",
-      waTimestamp,
+      externalTimestamp,
     })
-    .onConflictDoNothing({ target: [schema.message.waMessageId] })
+    .onConflictDoNothing({
+      target: [schema.message.organizationId, schema.message.integrationId, schema.message.externalMessageId],
+      where: sql`${schema.message.integrationId} is not null and ${schema.message.externalMessageId} is not null`,
+    })
     .returning();
   const message = inserted[0];
   if (!message) return; // duplicado
@@ -181,20 +132,20 @@ export async function ingestInboundMessage(input: {
   await db
     .update(schema.conversation)
     .set({
-      lastInboundAt: waTimestamp,
-      lastMessageAt: waTimestamp,
+      lastInboundAt: externalTimestamp,
+      lastMessageAt: externalTimestamp,
       unreadCount: sql`${schema.conversation.unreadCount} + 1`,
       updatedAt: new Date(),
     })
     .where(eq(schema.conversation.id, conversation.id));
 
-  await onLeadActivity(organizationId, contact.id, waTimestamp);
+  await onLeadActivity(organizationId, contact.id, externalTimestamp);
 
   publish(organizationId, {
     type: "message.new",
     data: { conversationId: conversation.id, message: serializeMessage(message) },
   });
-  const isImmediate = parseSlashCommand(input.text) !== null || input.waMessageId.startsWith("tg_cb_");
+  const isImmediate = parseSlashCommand(input.text) !== null || input.externalMessageId.startsWith("callback:");
   await maybeRunAgentTurn(conversation.id, isImmediate);
 }
 
@@ -213,6 +164,6 @@ export function serializeMessage(m: typeof schema.message.$inferSelect) {
     text: m.text,
     status: m.status,
     aiGenerated: m.aiGenerated,
-    createdAt: (m.waTimestamp ?? m.createdAt).toISOString(),
+    createdAt: (m.externalTimestamp ?? m.createdAt).toISOString(),
   };
 }

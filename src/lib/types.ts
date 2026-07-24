@@ -2,7 +2,7 @@
 
 export type ConversationDto = {
   id: string;
-  contact: { id: string; name: string; phone: string };
+  contact: { id: string; name: string; channel: string; externalAddress: string };
   stageName: string | null;
   aiEnabled: boolean;
   handoffAt: string | null;
@@ -26,16 +26,6 @@ export type MessageDto = {
   createdAt: string;
 };
 
-export type TemplateDto = {
-  id: string;
-  name: string;
-  language: string;
-  category: string;
-  body: string;
-  status: "draft" | "pending" | "approved" | "rejected";
-  rejectionReason: string | null;
-};
-
 export type StageDto = {
   id: string;
   name: string;
@@ -46,7 +36,8 @@ export type StageDto = {
 export type ContactDto = {
   id: string;
   name: string;
-  phone: string;
+  channel: string;
+  externalAddress: string;
   notes: string | null;
   archivedAt: string | null;
 };

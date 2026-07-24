@@ -1,4 +1,11 @@
 import { z } from "zod";
+import dns from "node:dns";
+
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch {
+  // Ignorar si el runtime no soporta setDefaultResultOrder
+}
 
 /**
  * Validación central del entorno.
@@ -18,14 +25,11 @@ const envSchema = z.object({
       message:
         "ENCRYPTION_KEY debe ser 32 bytes en base64 (genera con: openssl rand -base64 32)",
     }),
-  META_WEBHOOK_VERIFY_TOKEN: z.string().min(8),
-  META_APP_SECRET: z.string().optional(),
-  META_GRAPH_API_VERSION: z.string().default("v25.0"),
-  META_GRAPH_BASE_URL: z.string().url().default("https://graph.facebook.com"),
   TELEGRAM_ADMIN_BOT_TOKEN: z.string().optional(),
   TELEGRAM_ADMIN_ID: z.string().optional(),
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
   TELEGRAM_API_BASE_URL: z.string().url().default("https://api.telegram.org"),
+  TELEGRAM_DURABLE_MODE: z.enum(["off", "shadow", "enforce"]).default("enforce"),
   CLOUDFLARE_TUNNEL_TOKEN: z.string().optional(),
   PROVIDER_API_TOKEN: z.string().optional(),
   PROVIDER_API_KEY: z.string().optional(),
@@ -54,7 +58,6 @@ const envSchema = z.object({
   EMBEDDING_FALLBACK_PROVIDER: z.string().optional(),
   ALLOW_SIGNUP: z.string().optional(),
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(500),
-  WA_MOCK_ENABLED: z.string().optional(),
   NODE_ENV: z.string().default("development"),
 });
 
@@ -65,7 +68,6 @@ const BUILD_PLACEHOLDERS: Record<string, string> = {
   DATABASE_URL: "postgresql://build:build@localhost:5432/build",
   BETTER_AUTH_SECRET: "placeholder-build-secret",
   ENCRYPTION_KEY: Buffer.alloc(32).toString("base64"),
-  META_WEBHOOK_VERIFY_TOKEN: "placeholder-verify-token",
 };
 
 import { readFileSync } from "node:fs";
@@ -97,10 +99,13 @@ export function getEnv(): Env {
     ? { ...BUILD_PLACEHOLDERS, ...stripEmpty(process.env) }
     : stripEmpty(process.env);
 
-  // Si el shell inyectó una URL externa de neondb en dev/local (no en test/build), priorizamos DATABASE_URL del .env local
-  if (!isBuild && process.env.NODE_ENV !== "test" && source.DATABASE_URL?.includes("neon")) {
-    const localDb = loadLocalEnvFile().DATABASE_URL;
-    if (localDb) source.DATABASE_URL = localDb;
+  // Garantizar el uso de la BD local en Docker y rechazar Neon en runtime
+  const localEnv = loadLocalEnvFile();
+  if (!isBuild) {
+    const localDb = localEnv.DATABASE_URL || "postgresql://postgres:postgres@127.0.0.1:5432/vocero";
+    if (!source.DATABASE_URL || source.DATABASE_URL.includes("neon")) {
+      source.DATABASE_URL = localDb;
+    }
   }
 
   const parsed = envSchema.safeParse(source);
@@ -123,14 +128,6 @@ function stripEmpty(env: NodeJS.ProcessEnv): Record<string, string> {
     if (v !== undefined && v !== "") out[k] = v;
   }
   return out;
-}
-
-/** true si el entorno de pruebas interno (mocks) está habilitado y NO es producción. */
-export function isMockEnabled(): boolean {
-  return (
-    process.env.WA_MOCK_ENABLED === "true" &&
-    process.env.NODE_ENV !== "production"
-  );
 }
 
 /** true si hay proveedor de IA configurado (token presente y no vacío). */

@@ -39,7 +39,7 @@ export function buildAgentSystemPrompt(input: {
       : null;
 
   return [
-    `Eres "${profile.name}", el asistente de WhatsApp de este negocio. Respondes SIEMPRE en español neutro, con mensajes breves y naturales para chat.`,
+    `Eres "${profile.name}", el asistente de Telegram de este negocio. Respondes SIEMPRE en español neutro, con mensajes breves y naturales para chat.`,
     profile.tone ? `Tono: ${profile.tone}` : null,
     profile.instructions ? `Instrucciones del negocio:\n${profile.instructions}` : null,
     profile.escalationRules
@@ -85,7 +85,7 @@ export function buildJudgePrompt(input: {
   behaviorText: string;
 }): { system: string; user: string } {
   const system = [
-    `${JUDGE_MARKER} Eres un evaluador de calidad independiente de agentes de WhatsApp. Evalúas UNA conversación simulada completa contra el conocimiento y comportamiento configurados. Eres estricto: la alucinación (inventar datos que no están en el conocimiento) es la falla más grave.`,
+    `${JUDGE_MARKER} Eres un evaluador de calidad independiente de agentes de Telegram. Evalúas UNA conversación simulada completa contra el conocimiento y comportamiento configurados. Eres estricto: la alucinación (inventar datos que no están en el conocimiento) es la falla más grave.`,
     "Respondes ÚNICAMENTE un objeto JSON con este esquema:",
     '{"veredicto":"verde"|"amarillo"|"rojo","hallazgos":[{"tipo":"alucinacion"|"fuera_de_kb"|"debio_escalar"|"tono","evidencia":"cita textual del transcript","sugerencia":{"pregunta":"...","respuesta":"..."}}]}',
     "- verde: sin problemas relevantes. amarillo: mejorable. rojo: falla grave.",

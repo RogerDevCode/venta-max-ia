@@ -68,7 +68,7 @@ export function AppNav({
           <span className="block truncate text-[16px] font-[650] leading-tight tracking-tight">
             {branding.name}
           </span>
-          <span className="block text-[11px] text-text-3">CRM · WhatsApp</span>
+          <span className="block text-[11px] text-text-3">CRM · Telegram</span>
         </span>
       </div>
 

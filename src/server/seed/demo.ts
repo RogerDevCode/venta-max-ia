@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { getDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
@@ -16,14 +16,14 @@ type Db = ReturnType<typeof getDb>;
 const HOURS = 60 * 60 * 1000;
 
 const DEMO_CONTACTS: {
-  phone: string;
+  externalAddress: string;
   name: string;
   notes?: string;
   stage: string;
   thread: { dir: "in" | "out"; text: string; hoursAgo: number; ai?: boolean }[];
 }[] = [
   {
-    phone: "5215612340001",
+    externalAddress: "5215612340001",
     name: "María Fernanda López",
     stage: "Interesado",
     notes: "Remodela su cocina; busca herramienta eléctrica.",
@@ -36,7 +36,7 @@ const DEMO_CONTACTS: {
     ],
   },
   {
-    phone: "5215612340002",
+    externalAddress: "5215612340002",
     name: "Carlos Ramírez",
     stage: "En conversación",
     thread: [
@@ -47,7 +47,7 @@ const DEMO_CONTACTS: {
     ],
   },
   {
-    phone: "5215612340003",
+    externalAddress: "5215612340003",
     name: "Lupita Hernández",
     stage: "Cliente",
     notes: "Compra recurrente para su taller de carpintería.",
@@ -59,7 +59,7 @@ const DEMO_CONTACTS: {
     ],
   },
   {
-    phone: "5215612340004",
+    externalAddress: "5215612340004",
     name: "Jorge Castillo",
     stage: "Nuevo",
     thread: [
@@ -68,7 +68,7 @@ const DEMO_CONTACTS: {
     ],
   },
   {
-    phone: "5215612340005",
+    externalAddress: "5215612340005",
     name: "Ana Sofía Torres",
     stage: "Interesado",
     thread: [
@@ -80,7 +80,7 @@ const DEMO_CONTACTS: {
     ],
   },
   {
-    phone: "5215612340006",
+    externalAddress: "5215612340006",
     name: "Roberto Mendoza",
     stage: "Perdido",
     notes: "Buscaba precio de mayoreo que no podemos igualar.",
@@ -92,7 +92,7 @@ const DEMO_CONTACTS: {
     ],
   },
   {
-    phone: "5215612340007",
+    externalAddress: "5215612340007",
     name: "Paty Domínguez",
     stage: "En conversación",
     thread: [
@@ -102,7 +102,7 @@ const DEMO_CONTACTS: {
     ],
   },
   {
-    phone: "5215612340008",
+    externalAddress: "5215612340008",
     name: "Don Chuy Aguilar",
     stage: "Cliente",
     thread: [
@@ -125,7 +125,7 @@ const DEMO_KB: { kind: "qa" | "block"; question?: string; answer?: string; conte
   { kind: "qa", question: "¿Hacen envíos a domicilio?", answer: "Sí: entrega el mismo día en la zona si confirmas antes de la 1 pm. Flete local $150 MXN; gratis en compras mayores a $3,000 MXN." },
   { kind: "qa", question: "¿Qué métodos de pago aceptan?", answer: "Efectivo, tarjeta (crédito/débito), transferencia SPEI y pago contra entrega en pedidos locales." },
   { kind: "qa", question: "¿Dan factura?", answer: "Sí, facturamos el mismo día. Envíanos tu constancia de situación fiscal y el ticket de compra." },
-  { kind: "qa", question: "¿Tienen precios de mayoreo?", answer: "Sí: en cemento, mortero y varilla hay precio especial a partir de 10 unidades; en pintura a partir de 5 cubetas. Pide tu cotización por WhatsApp." },
+  { kind: "qa", question: "¿Tienen precios de mayoreo?", answer: "Sí: en cemento, mortero y varilla hay precio especial a partir de 10 unidades; en pintura a partir de 5 cubetas. Pide tu cotización por Telegram." },
   { kind: "qa", question: "¿Qué marcas de herramienta manejan?", answer: "Truper, Pretul, DeWalt, Makita y Ryobi en eléctrica; Volteck y Condulac en material eléctrico; Comex y Berel en pintura." },
   // HUECO INTENCIONAL: nada sobre garantías ni devoluciones (lo encuentra el Laboratorio).
 ];
@@ -134,13 +134,17 @@ export async function seedDemo(
   db: Db,
   organizationId: string
 ): Promise<{ contacts: number; kbEntries: number }> {
-  const demoPhones = DEMO_CONTACTS.map((c) => c.phone);
+  const demoPhones = DEMO_CONTACTS.map((c) => c.externalAddress);
 
   // --- Idempotencia: limpiar datos demo previos (orden inverso de FKs) ---
   const prevContacts = await db
     .select({ id: schema.contact.id })
     .from(schema.contact)
-    .where(inArray(schema.contact.phone, demoPhones));
+    .where(and(
+      eq(schema.contact.organizationId, organizationId),
+      eq(schema.contact.channel, "test"),
+      inArray(schema.contact.externalAddress, demoPhones),
+    ));
   const prevIds = prevContacts.map((c) => c.id);
   if (prevIds.length > 0) {
     const prevConvs = await db
@@ -187,7 +191,8 @@ export async function seedDemo(
     await db.insert(schema.contact).values({
       id: contactId,
       organizationId,
-      phone: demo.phone,
+      externalAddress: demo.externalAddress,
+      channel: "test",
       name: demo.name,
       notes: demo.notes ?? null,
     });
@@ -216,13 +221,14 @@ export async function seedDemo(
         id: newId("message"),
         organizationId,
         conversationId,
-        waMessageId: `wamid.demo.${newId("message")}`,
+        externalMessageId: `test:${newId("message")}`,
+        channel: "telegram",
         direction: msg.dir,
         type: "text",
         text: msg.text,
         status: msg.dir === "in" ? "delivered" : "read",
         aiGenerated: msg.ai ?? false,
-        waTimestamp: at,
+        externalTimestamp: at,
         createdAt: at,
       });
     }

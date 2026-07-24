@@ -9,7 +9,7 @@ export type Persona = {
   label: string;
   description: string;
   /** Teléfono sintético estable (jamás un número real). */
-  phone: string;
+  externalAddress: string;
   contactName: string;
   script: string[];
 };
@@ -19,7 +19,7 @@ export const PERSONAS: Persona[] = [
     key: "comprador_decidido",
     label: "Comprador decidido",
     description: "Sabe lo que quiere y va directo a comprar.",
-    phone: "5210000000001",
+    externalAddress: "5210000000001",
     contactName: "[Prueba] Comprador decidido",
     script: [
       "Hola, buenas tardes",
@@ -32,7 +32,7 @@ export const PERSONAS: Persona[] = [
     key: "pregunton_precios",
     label: "Preguntón de precios",
     description: "Pregunta precio tras precio sin decidirse.",
-    phone: "5210000000002",
+    externalAddress: "5210000000002",
     contactName: "[Prueba] Preguntón de precios",
     script: [
       "Hola, ¿qué precio tiene el martillo?",
@@ -46,7 +46,7 @@ export const PERSONAS: Persona[] = [
     key: "cliente_enojado",
     label: "Cliente enojado",
     description: "Llega molesto por un problema con su compra.",
-    phone: "5210000000003",
+    externalAddress: "5210000000003",
     contactName: "[Prueba] Cliente enojado",
     script: [
       "Oigan, esto es el colmo",
@@ -59,7 +59,7 @@ export const PERSONAS: Persona[] = [
     key: "fuera_de_kb",
     label: "Pregunta fuera del conocimiento",
     description: "Pregunta algo que el knowledge base no cubre (fuera_de_kb).",
-    phone: "5210000000004",
+    externalAddress: "5210000000004",
     contactName: "[Prueba] Fuera del conocimiento",
     script: [
       "Hola, una pregunta",
@@ -72,7 +72,7 @@ export const PERSONAS: Persona[] = [
     key: "pide_humano",
     label: "Pide un humano",
     description: "Quiere ser atendido por una persona (debe escalar).",
-    phone: "5210000000005",
+    externalAddress: "5210000000005",
     contactName: "[Prueba] Pide humano",
     script: [
       "Hola",
@@ -85,7 +85,7 @@ export const PERSONAS: Persona[] = [
     key: "errores_modismos",
     label: "Errores y modismos",
     description: "Escribe con faltas de ortografía y modismos mexicanos.",
-    phone: "5210000000006",
+    externalAddress: "5210000000006",
     contactName: "[Prueba] Errores y modismos",
     script: [
       "ke onda, si benden pintura?",
@@ -98,7 +98,7 @@ export const PERSONAS: Persona[] = [
     key: "comprador_telegram_menu",
     label: "Comprador menú Telegram",
     description: "Prueba la interactividad y selección desde menús de opciones en Telegram.",
-    phone: "5210000000007",
+    externalAddress: "5210000000007",
     contactName: "[Prueba] Comprador Telegram menú",
     script: [
       "Hola, me gustaría ver el menú de servicios disponibles",
@@ -111,7 +111,7 @@ export const PERSONAS: Persona[] = [
     key: "cliente_preguntas_rag",
     label: "Cliente RAG anti-alucinación",
     description: "Evalúa si el RAG recupera información técnica precisa de la base de conocimiento sin alucinar.",
-    phone: "5210000000008",
+    externalAddress: "5210000000008",
     contactName: "[Prueba] Cliente preguntas RAG",
     script: [
       "Buenas, necesito información técnica detallada",

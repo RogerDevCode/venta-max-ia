@@ -68,7 +68,6 @@ export async function resolveActiveOrganizationId(
 
 const MEMBERSHIP_TTL_MS = 15000;
 declare global {
-  // eslint-disable-next-line no-var
   var __membershipCache: Map<string, { membership: { organizationId: string; role: string } | null; expiresAt: number }> | undefined;
 }
 function getMembershipCache() {

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Archive, ArchiveRestore, MessageSquareText, Search } from "lucide-react";
 import type { ContactDto } from "@/lib/types";
-import { formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -72,7 +71,7 @@ export function ContactsClient() {
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             <p className="text-sm font-medium">Sin contactos</p>
             <p className="max-w-sm text-xs text-muted-foreground">
-              Cada persona que escriba a tu WhatsApp quedará registrada aquí
+              Cada persona que escriba a tu bot de Telegram quedará registrada aquí
               automáticamente.
             </p>
           </div>
@@ -94,7 +93,7 @@ export function ContactsClient() {
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {formatPhone(c.phone)}
+                    Telegram ID: {c.externalAddress}
                     {c.notes ? ` · ${c.notes.slice(0, 60)}` : ""}
                   </p>
                 </div>

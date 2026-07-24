@@ -4,9 +4,7 @@ import { newId } from "@/lib/db/ids";
 import { getEnv, isAiConfigured } from "@/lib/env";
 import { chatJson, type ChatMessage } from "@/lib/ai";
 import { publish } from "@/server/events/bus";
-import { isWindowOpen } from "@/server/inbox/window";
-import { SendError, sendText } from "@/server/inbox/send";
-import { sendChatAction } from "@/lib/telegram/client";
+import { sendText } from "@/server/inbox/send";
 import { AgentAction, degradeAction, resolveStage, type AgentActionType } from "@/server/ai/actions";
 import { matchesHandoffIntent } from "@/server/ai/handoff";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
@@ -15,6 +13,7 @@ import {
   buscarProductos,
   confirmarPedido,
 } from "@/server/ecommerce/service";
+import { renderPriceDisclosure } from "@/server/ecommerce/pricing";
 import { parseSlashCommand, processPendingProductQuantity, processSlashCommand } from "@/server/ai/commands";
 import { resolveMenuInput, type MenuStateMetadata } from "@/server/ai/menu-fsm";
 
@@ -146,12 +145,12 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     const navigation = parseSlashCommand(lastInbound.text);
     if (navigation === "nav:home" || navigation === "nav:back") {
       const result = await processSlashCommand({
-        command: navigation, conversation, lastInboundWaId: lastInbound.waMessageId, profile,
+        command: navigation, conversation, lastInboundExternalId: lastInbound.externalMessageId, profile,
       });
       if (result.handled) return;
     }
     if (await processPendingProductQuantity({
-      conversation, text: lastInbound.text, lastInboundWaId: lastInbound.waMessageId,
+      conversation, text: lastInbound.text, lastInboundExternalId: lastInbound.externalMessageId,
     })) return;
   }
 
@@ -181,7 +180,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         const cmdResult = await processSlashCommand({
           command: slashCmd,
           conversation,
-          lastInboundWaId: lastInbound.waMessageId,
+          lastInboundExternalId: lastInbound.externalMessageId,
           profile,
         });
         if (cmdResult.handled) return;
@@ -197,25 +196,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
 
   if (!isAiConfigured()) return;
 
-  if (!conversation.isTest && !isWindowOpen(conversation.lastInboundAt)) {
-    await applyHandoff(conversationId, organizationId, "ventana");
-    return;
-  }
   
-  if (lastInbound.waMessageId?.startsWith("tg_")) {
-    const parts = lastInbound.waMessageId.split("_");
-    const chatId = parts[1];
-    if (chatId && chatId !== "cb") {
-      void sendChatAction({ chatId, action: "typing" }).catch(() => {});
-    }
-  }
-
-  // Ventana cerrada: el agente JAMÁS envía texto libre → handoff 'ventana'.
-  if (!conversation.isTest && !isWindowOpen(conversation.lastInboundAt)) {
-    await applyHandoff(conversationId, organizationId, "ventana");
-    return;
-  }
-
   // Patrón de respaldo ANTES del LLM (FR-022).
   if (lastInbound.text && matchesHandoffIntent(lastInbound.text)) {
     if (profile.humanAvailable) {
@@ -336,7 +317,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       return;
     }
     case "enviar_menu_opciones": {
-      const isTelegram = lastInbound?.waMessageId?.startsWith("tg_") ?? false;
+      const isTelegram = lastInbound?.channel === "telegram";
       if (isTelegram) {
         const replyMarkup = {
           inline_keyboard: action.botones.map((b) => [
@@ -379,7 +360,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       await processSlashCommand({
         command: "menu:categorias",
         conversation,
-        lastInboundWaId: lastInbound?.waMessageId,
+        lastInboundExternalId: lastInbound?.externalMessageId,
         profile,
       });
       return;
@@ -410,14 +391,17 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
           type: "conversation.updated",
           data: { conversation: { id: conversationId } },
         });
+        if (res.priceChanges?.length) {
+          await deliverReply(conversation, renderPriceDisclosure(res.priceChanges, res.order.totalAmount));
+        }
         const resText =
           action.reply ||
-          `¡Pedido confirmado exitosamente! Número de pedido: ${res.order.orderNumber}.`;
+          `¡Pedido confirmado exitosamente! Número de pedido: ${res.order.orderNumber}. Total definitivo: $${res.order.totalAmount.toLocaleString("es-CL")} CLP.`;
         await deliverReply(conversation, resText);
         await processSlashCommand({
           command: `order:detail:${res.order.id}`,
           conversation,
-          lastInboundWaId: lastInbound?.waMessageId,
+          lastInboundExternalId: lastInbound?.externalMessageId,
           profile,
           navigationStack: ["menu:main", "menu:orders"],
         });
@@ -426,7 +410,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
           await processSlashCommand({
             command: "cart:checkout",
             conversation,
-            lastInboundWaId: lastInbound?.waMessageId,
+            lastInboundExternalId: lastInbound?.externalMessageId,
             profile,
           });
           return;
@@ -457,22 +441,14 @@ async function deliverReply(
     await persistTestOutbound(conversation, text);
     return;
   }
-  try {
-    await sendText({
-      conversationId: conversation.id,
-      organizationId: conversation.organizationId,
-      text,
-      aiGenerated: true,
-      replyMarkup: opts?.replyMarkup,
-      parseMode: opts?.parseMode,
-    });
-  } catch (err) {
-    if (err instanceof SendError && err.code === "window_closed") {
-      await applyHandoff(conversation.id, conversation.organizationId, "ventana");
-      return;
-    }
-    throw err;
-  }
+  await sendText({
+    conversationId: conversation.id,
+    organizationId: conversation.organizationId,
+    text,
+    aiGenerated: true,
+    replyMarkup: opts?.replyMarkup,
+    parseMode: opts?.parseMode,
+  });
 }
 
 /** Mensaje saliente del sandbox: se persiste, JAMÁS toca la API (FR-031). */

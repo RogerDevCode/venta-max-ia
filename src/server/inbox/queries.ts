@@ -1,11 +1,10 @@
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
-import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
 
 export type ConversationDto = {
   id: string;
-  contact: { id: string; name: string; phone: string };
+  contact: { id: string; name: string; channel: string; externalAddress: string };
   stageName: string | null;
   aiEnabled: boolean;
   handoffAt: string | null;
@@ -115,7 +114,7 @@ export function serializeConversation(
 ): ConversationDto {
   return {
     id: c.id,
-    contact: { id: contact.id, name: contact.name, phone: contact.phone },
+    contact: { id: contact.id, name: contact.name, channel: contact.channel, externalAddress: contact.externalAddress },
     stageName,
     aiEnabled: c.aiEnabled,
     handoffAt: c.handoffAt?.toISOString() ?? null,
@@ -123,8 +122,8 @@ export function serializeConversation(
     lastInboundAt: c.lastInboundAt?.toISOString() ?? null,
     lastMessageAt: c.lastMessageAt?.toISOString() ?? null,
     unreadCount: c.unreadCount,
-    windowOpen: isWindowOpen(c.lastInboundAt),
-    windowRemainingMs: windowRemainingMs(c.lastInboundAt),
+    windowOpen: true,
+    windowRemainingMs: 0,
     preview,
   };
 }
