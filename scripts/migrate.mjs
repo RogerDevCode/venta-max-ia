@@ -33,6 +33,26 @@ async function requireDestructiveConsent(sql) {
     const rows = await sql.unsafe(`select 1 from drizzle.__drizzle_migrations where hash=$1 limit 1`, [hash]);
     if (rows[0]) return;
   }
+  const legacySchema = await sql.unsafe(`
+    select
+      to_regclass('public.meta_credentials') as meta_credentials,
+      to_regclass('public.template') as template
+  `);
+  const hasMetaCredentials = legacySchema[0]?.meta_credentials !== null;
+  const hasTemplates = legacySchema[0]?.template !== null;
+
+  // En un bootstrap vacío las migraciones anteriores todavía no han creado
+  // estas tablas. El journal completo las crea y luego 0014 las retira en la
+  // misma secuencia, sin datos de cliente que respaldar. En cambio, una base
+  // parcialmente migrada debe detenerse: intentar adivinar su estado puede
+  // convertir una recuperación en pérdida de datos.
+  if (!hasMetaCredentials && !hasTemplates) return;
+  if (!hasMetaCredentials || !hasTemplates) {
+    throw new Error(
+      "Migration 0014 found a partial legacy WhatsApp schema; restore a verified backup before continuing"
+    );
+  }
+
   const expected = `0014:${hash}`;
   if (process.env.CONFIRM_DROP_WHATSAPP_DATA !== expected) {
     throw new Error(`Migration 0014 requires CONFIRM_DROP_WHATSAPP_DATA=${expected}`);
@@ -53,8 +73,8 @@ async function requireDestructiveConsent(sql) {
   }
 }
 
-export async function runMigrations() {
-  let url = process.env.DATABASE_URL;
+export async function runMigrations({ databaseUrl } = {}) {
+  let url = databaseUrl ?? process.env.DATABASE_URL;
   if (!url || url.includes("neon")) {
     url = "postgresql://postgres:postgres@127.0.0.1:5432/vocero";
   }
@@ -62,6 +82,11 @@ export async function runMigrations() {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const sql = postgres(url, { max: 1, onnotice: () => {} });
     try {
+      // pgvector forma parte del esquema versionado. Garantizar la extensión
+      // antes del journal hace que un volumen nuevo sea reproducible y evita
+      // que una migración falle a mitad de la inicialización por no reconocer
+      // el tipo `vector`.
+      await sql.unsafe("create extension if not exists vector");
       await requireDestructiveConsent(sql);
       await migrate(drizzle(sql), { migrationsFolder });
       await verifySchema(sql);
