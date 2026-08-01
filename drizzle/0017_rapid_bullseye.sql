@@ -1,0 +1,1 @@
+ALTER TABLE "commerce_settings" ADD COLUMN "mercadopago_access_token" text;

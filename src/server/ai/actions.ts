@@ -52,6 +52,11 @@ export const AgentAction = z.discriminatedUnion("action", [
     action: z.literal("confirmar_pedido"),
     reply: z.string().optional(),
   }),
+  z.object({
+    action: z.literal("generar_link_pago"),
+    orderId: z.string().min(1),
+    reply: z.string().optional(),
+  }),
 ]);
 
 export type AgentActionType = z.infer<typeof AgentAction>;

@@ -17,11 +17,11 @@ const buttonVariants = cva(
           "bg-destructive text-destructive-foreground hover:bg-destructive/90",
       },
       size: {
-        default: "h-9 px-4 py-2",
-        xs: "h-7 rounded-md px-2 text-[11px]",
-        sm: "h-8 rounded-md px-3 text-xs",
-        lg: "h-10 rounded-md px-8",
-        icon: "h-9 w-9",
+        default: "h-11 px-4 py-2 sm:h-9",
+        xs: "h-11 rounded-md px-3 text-[11px] sm:h-7 sm:px-2",
+        sm: "h-11 rounded-md px-4 text-xs sm:h-8 sm:px-3",
+        lg: "h-12 rounded-md px-8 sm:h-10",
+        icon: "h-11 w-11 sm:h-9 sm:w-9",
       },
     },
     defaultVariants: {

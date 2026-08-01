@@ -142,9 +142,9 @@ export function ContactPanel({
         <button
           onClick={onClose}
           aria-label="Ocultar panel"
-          className="rounded p-1 text-text-3 hover:bg-accent hover:text-foreground"
+          className="flex h-11 w-11 items-center justify-center rounded text-text-3 hover:bg-accent hover:text-foreground sm:h-8 sm:w-8"
         >
-          <ChevronRight className="h-4 w-4" strokeWidth={1.7} />
+          <ChevronRight className="h-5 w-5 sm:h-4 sm:w-4" strokeWidth={1.7} />
         </button>
       </header>
 
@@ -215,6 +215,7 @@ export function ContactPanel({
                 }}
                 className={cn(
                   "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full px-0.5 transition-colors",
+                  "after:absolute after:inset-[-12px] sm:after:inset-0",
                   aiActive ? "bg-brand" : "bg-border-strong",
                   !agentReady && "cursor-not-allowed opacity-60"
                 )}
@@ -319,6 +320,7 @@ export function ContactPanel({
                       aria-label={`Mover a ${s.name}`}
                       className={cn(
                         "relative z-10 mt-0.5 flex h-[15px] w-[15px] shrink-0 items-center justify-center rounded-full transition-colors",
+                        "after:absolute after:inset-[-14px] sm:after:inset-0",
                         done && "bg-brand text-white",
                         current && "bg-brand ring-4 ring-brand-soft",
                         !done && !current && "border border-border-strong bg-background hover:border-brand"
@@ -329,7 +331,8 @@ export function ContactPanel({
                     <button
                       onClick={() => void moveToStage(s.id)}
                       className={cn(
-                        "text-left text-[13px]",
+                        "text-left text-[13px] relative",
+                        "after:absolute after:-inset-y-3 after:-inset-x-2 sm:after:inset-0",
                         current ? "font-[650] text-brand-text" : "text-text-2 hover:text-foreground"
                       )}
                     >

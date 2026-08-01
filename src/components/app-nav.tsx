@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  BarChart2,
   FlaskConical,
   Inbox,
   Kanban,
@@ -25,6 +26,7 @@ const NAV = [
   { href: "/contacts", label: "Contactos", icon: Users },
   { href: "/agent", label: "Agente", icon: Sparkles },
   { href: "/lab", label: "Laboratorio", icon: FlaskConical },
+  { href: "/analytics", label: "Analytics", icon: BarChart2 },
 ] as const;
 
 export function AppNav({
@@ -84,14 +86,17 @@ export function AppNav({
               href={item.href}
               prefetch={true}
               className={cn(
-                "flex items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
+                "group flex items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
                 active
                   ? "bg-brand-tint font-semibold text-brand-text"
-                  : "text-text-2 hover:bg-accent"
+                  : "text-text-2 hover:bg-accent hover:text-foreground"
               )}
             >
               <item.icon
-                className={cn("h-[18px] w-[18px]", active ? "text-brand" : "text-text-3")}
+                className={cn(
+                  "h-[18px] w-[18px] transition-colors",
+                  active ? "text-brand" : "text-text-3 group-hover:text-foreground"
+                )}
                 strokeWidth={1.7}
               />
               <span className="flex-1">{item.label}</span>
@@ -116,16 +121,16 @@ export function AppNav({
         href="/settings"
         prefetch={true}
         className={cn(
-          "flex items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
+          "group flex items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
           pathname.startsWith("/settings")
             ? "bg-brand-tint font-semibold text-brand-text"
-            : "text-text-2 hover:bg-accent"
+            : "text-text-2 hover:bg-accent hover:text-foreground"
         )}
       >
         <Settings
           className={cn(
-            "h-[18px] w-[18px]",
-            pathname.startsWith("/settings") ? "text-brand" : "text-text-3"
+            "h-[18px] w-[18px] transition-colors",
+            pathname.startsWith("/settings") ? "text-brand" : "text-text-3 group-hover:text-foreground"
           )}
           strokeWidth={1.7}
         />

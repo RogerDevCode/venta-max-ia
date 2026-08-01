@@ -36,6 +36,7 @@ COPY --from=builder --chown=ventamaxia:ventamaxia /app/public ./public
 COPY --from=builder --chown=ventamaxia:ventamaxia /app/migrate.bundle.mjs ./migrate.mjs
 COPY --from=builder --chown=ventamaxia:ventamaxia /app/seed-demo.bundle.mjs ./seed-demo.mjs
 COPY --from=builder --chown=ventamaxia:ventamaxia /app/drizzle ./drizzle
+COPY --from=builder --chown=ventamaxia:ventamaxia /app/drizzle /drizzle
 
 USER ventamaxia
 EXPOSE 3000

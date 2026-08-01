@@ -13,6 +13,7 @@ import {
   buscarProductos,
   confirmarPedido,
 } from "@/server/ecommerce/service";
+import { createPaymentLink } from "@/server/payments/mercadopago";
 import { renderPriceDisclosure } from "@/server/ecommerce/pricing";
 import { parseSlashCommand, processPendingProductQuantity, processSlashCommand } from "@/server/ai/commands";
 import { resolveMenuInput, type MenuStateMetadata } from "@/server/ai/menu-fsm";
@@ -422,6 +423,19 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
             : res.error === "invalid_cart"
               ? "No pude confirmar el pedido porque el carrito contiene cantidades inválidas."
               : `No pude confirmar el pedido porque su carrito está vacío.`;
+        await deliverReply(conversation, resText);
+      }
+      return;
+    }
+    case "generar_link_pago": {
+      const res = await createPaymentLink(organizationId, action.orderId);
+      if (res.ok && res.url) {
+        const resText = action.reply 
+          ? `${action.reply}\n\nPuedes pagar aquí: ${res.url}`
+          : `Aquí tienes tu link de pago para MercadoPago: ${res.url}`;
+        await deliverReply(conversation, resText);
+      } else {
+        const resText = action.reply || "Hubo un error al generar el link de pago. Por favor intenta más tarde.";
         await deliverReply(conversation, resText);
       }
       return;

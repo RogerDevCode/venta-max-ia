@@ -13,8 +13,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { verifySchema } from "./verify-schema.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const migrationsFolder =
-  process.env.MIGRATIONS_DIR ?? path.join(here, "..", "drizzle");
+const bundledMigrationsFolder = path.join(here, "drizzle");
+const sourceMigrationsFolder = path.join(here, "..", "drizzle");
+const migrationsFolder = process.env.MIGRATIONS_DIR ?? (
+  existsSync(bundledMigrationsFolder) ? bundledMigrationsFolder : sourceMigrationsFolder
+);
 
 async function requireDestructiveConsent(sql) {
   const file = readFileSync(path.join(migrationsFolder, "meta", "_journal.json"), "utf8");

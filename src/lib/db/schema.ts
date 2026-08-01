@@ -114,7 +114,7 @@ export const contact = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    channel: text("channel", { enum: ["telegram", "test", "retired_whatsapp"] }).notNull(),
+    channel: text("channel", { enum: ["telegram", "whatsapp", "test", "retired_whatsapp"] }).notNull(),
     externalAddress: text("external_address").notNull(),
     name: text("name").notNull(),
     notes: text("notes"),
@@ -216,7 +216,7 @@ export const message = pgTable(
     conversationId: text("conversation_id")
       .notNull()
       .references(() => conversation.id, { onDelete: "cascade" }),
-    channel: text("channel", { enum: ["telegram"] }).notNull().default("telegram"),
+    channel: text("channel", { enum: ["telegram", "whatsapp"] }).notNull().default("telegram"),
     integrationId: text("integration_id"),
     externalMessageId: text("external_message_id"),
     direction: text("direction", { enum: ["in", "out"] }).notNull(),
@@ -279,6 +279,26 @@ export const telegramIntegration = pgTable(
     uniqueIndex("telegram_integration_org_uq").on(t.organizationId),
     uniqueIndex("telegram_integration_token_hash_uq").on(t.webhookTokenHash),
     uniqueIndex("telegram_integration_bot_id_uq").on(t.botId),
+  ]
+);
+
+export const whatsappIntegration = pgTable(
+  "whatsapp_integration",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    accessToken: text("access_token"),
+    verifyTokenHash: text("verify_token_hash").notNull(),
+    phoneNumberId: text("phone_number_id"),
+    wabaId: text("waba_id"),
+    status: text("status", { enum: ["pending", "connected", "failed"] }).notNull().default("pending"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("whatsapp_integration_org_uq").on(t.organizationId),
   ]
 );
 
@@ -565,6 +585,7 @@ export const commerceSettings = pgTable(
       .primaryKey()
       .references(() => organization.id, { onDelete: "cascade" }),
     maxUnitsPerProduct: integer("max_units_per_product").notNull().default(10),
+    mercadopagoAccessToken: text("mercadopago_access_token"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -657,5 +678,32 @@ export const order = pgTable(
       t.contactId,
       t.status
     ),
+  ]
+);
+
+export const payment = pgTable(
+  "payment",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    orderId: text("order_id")
+      .notNull()
+      .references(() => order.id, { onDelete: "cascade" }),
+    provider: text("provider", { enum: ["mercadopago", "stripe", "transfer"] }).notNull(),
+    externalId: text("external_id"),
+    amount: integer("amount").notNull(),
+    status: text("status", {
+      enum: ["pending", "paid", "failed", "refunded"],
+    }).notNull().default("pending"),
+    paymentUrl: text("payment_url"),
+    paidAt: timestamp("paid_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("payment_org_order_idx").on(t.organizationId, t.orderId),
+    uniqueIndex("payment_org_external_id_uq").on(t.organizationId, t.provider, t.externalId).where(sql`${t.externalId} IS NOT NULL`),
   ]
 );

@@ -113,6 +113,27 @@
       "when": 1784880000000,
       "tag": "0015_add_order_is_paid",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1785176259189,
+      "tag": "0016_noisy_juggernaut",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785176287545,
+      "tag": "0017_rapid_bullseye",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785176457610,
+      "tag": "0018_smooth_kingpin",
+      "breakpoints": true
     }
   ]
 }

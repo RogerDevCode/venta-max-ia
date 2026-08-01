@@ -124,7 +124,17 @@
   *,
   *::before,
   *::after {
-    transition-duration: 0.01ms !important;
+    /* Estrategia intencional: preservar el feedback visual de estado (color, opacidad, sombras)
+       pero eliminar el movimiento espacial o cambios de layout (transform, width, margin, etc.) */
+    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, filter, backdrop-filter !important;
+  }
+
+  /* Desactivar keyframes por defecto (Tailwind animate-* plugin) que suelen ser espaciales */
+  [class*="animate-"]:not(.animate-none) {
     animation-duration: 0.01ms !important;
+  }
+
+  html {
+    scroll-behavior: auto !important;
   }
 }

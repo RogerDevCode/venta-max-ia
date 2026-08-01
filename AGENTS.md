@@ -13,6 +13,12 @@ Consolidar la arquitectura TypeScript/Next.js 15/React 19 de Venta Max IA con la
 - **Chasis:** Multi-Tenant real (`organization_id` + `scoped()`), Drizzle ORM sobre PostgreSQL, cifrado `AES-256-GCM`, SSE en tiempo real y Juez LLM (`judge.ts`).
 - **Capacidades Migradas:** Telegram Bot API, teclados e interactividad, RAG con `pgvector`, flujos de estado (FSB/GADK) y carrito/E-Commerce.
 
+## 2.1. Megaproyecto STAX
+
+Por instrucción explícita del usuario, este repositorio es **STAX Atención Ordenada** dentro del megaproyecto junto con `/home/manager/Sync/python_proyects/true-deal-studio` (landing comercial) y `/home/manager/Sync/python_proyects/voicelive-v2` (orientación por voz). La oferta común es: la web explica, la voz orienta y el dueño decide el siguiente paso.
+
+Los tres repositorios se coordinan, pero mantienen datos, secretos, runtime y despliegue separados. **El desarrollo de cada proyecto es individual, por lo que mantienen carpetas separadas y dockers separados.** Para una integración transversal autorizada, declarar primero URL o payload, autenticación, responsable, errores y prueba de extremo a extremo. El túnel local actual publica `bot.stax.ink` hacia el proxy de desarrollo de este proyecto.
+
 ---
 
 ## 3. Infraestructura y Scripts de Control Obligatorios
@@ -54,3 +60,10 @@ Plan maestro TDD/SDD: `specs/002-migracion-chatbot-rag-telegram/plan.md`
 ## 6. Anexo Operativo (Renombre Venta Max IA)
 - Marca y paquete renombrados a **Venta Max IA**.
 - Mantenidos por compatibilidad: base de datos `vocero` y directorio `specs/001-vocero-core`.
+
+---
+
+## 7. TODOs Futuros (Roadmap Multi-Vendedor)
+- [ ] **Bandeja aislada (Vendedor solo ve SUS clientes):**
+  - **Schema / BD:** Agregar columna `assigned_user_id` en las tablas `conversation`, `contact` y `lead`.
+  - **Filtro por Rol:** Modificar consultas Drizzle con `scoped(organization_id)` para filtrar `where(eq(conversation.assignedUserId, currentUserId))` cuando el rol sea `seller`/`member`, reservando la vista global para `owner`/`admin`.
