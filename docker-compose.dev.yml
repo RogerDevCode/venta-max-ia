@@ -11,7 +11,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: vocero
     ports:
-      - "5432:5432"
+      # Las pruebas locales usan 127.0.0.1:5432; no exponer PostgreSQL a la LAN.
+      - "127.0.0.1:5432:5432"
     volumes:
       - vocero_dev_pg:/var/lib/postgresql
     healthcheck:
