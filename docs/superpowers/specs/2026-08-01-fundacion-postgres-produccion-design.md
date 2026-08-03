@@ -47,6 +47,7 @@ postgres bootstrap (solo provisionamiento local/operador)
   ├─ venta_owner       NOLOGIN, dueño de esquema y objetos
   ├─ venta_migrator    LOGIN, NOBYPASSRLS, puede SET ROLE venta_owner solo para DDL
   ├─ venta_app         LOGIN, NOBYPASSRLS, DML explícito y sin DDL
+  ├─ venta_auth        LOGIN, identidad y sesiones sin tablas de negocio
   ├─ venta_ingress     LOGIN, NOBYPASSRLS, solo funciones de resolución/verificación de webhook
   ├─ venta_backup      LOGIN operativo, lectura global y sin escritura
   └─ venta_restore     LOGIN operativo, solo bases temporales de simulacro
