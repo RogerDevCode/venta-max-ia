@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { after } from "next/server";
 import {
   findTelegramIntegrationByWebhookToken,
   captureTelegramReceiptContext,
@@ -14,6 +13,7 @@ import {
 import { safeEqual } from "@/server/security/safe-equal";
 import { drainTelegramReceipts } from "@/server/telegram/receipt-queue";
 import { decodeMenuCallback } from "@/server/telegram/menu-codec";
+import { withIngressTransaction } from "@/lib/db/context";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +49,8 @@ export async function POST(req: Request, { params }: Params) {
   if (!integration) {
     return new Response(null, { status: 404 });
   }
+
+  return withIngressTransaction(integration.organizationId, async () => {
 
   if (integration.status === "connected" && integration.webhookHeaderSecretHash) {
     const header = req.headers.get("x-telegram-bot-api-secret-token") ?? "";
@@ -102,9 +104,9 @@ export async function POST(req: Request, { params }: Params) {
     return Response.json({ received: true });
   }
 
-  after(() => drainTelegramReceipts().catch((err) =>
+  await drainTelegramReceipts().catch((err) =>
     console.error("[telegram-webhook] drenaje inmediato falló:", err)
-  ));
-
+  );
   return Response.json({ received: true });
+  });
 }

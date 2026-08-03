@@ -1,5 +1,6 @@
 import { z } from "zod";
 import dns from "node:dns";
+import { resolveSecret } from "@/lib/secret-file";
 
 try {
   dns.setDefaultResultOrder("ipv4first");
@@ -17,8 +18,11 @@ try {
 
 const envSchema = z.object({
   APP_BASE_URL: z.string().url(),
-  DATABASE_URL: z.string().min(1),
-  BETTER_AUTH_SECRET: z.string().min(16),
+  APP_DATABASE_URL: z.string().min(1),
+  AUTH_DATABASE_URL: z.string().min(1),
+  INGRESS_DATABASE_URL: z.string().min(1),
+  MIGRATOR_DATABASE_URL: z.string().min(1).optional(),
+  BETTER_AUTH_SECRET: z.string().min(32),
   ENCRYPTION_KEY: z
     .string()
     .refine((v) => Buffer.from(v, "base64").length === 32, {
@@ -65,47 +69,32 @@ export type Env = z.infer<typeof envSchema>;
 
 const BUILD_PLACEHOLDERS: Record<string, string> = {
   APP_BASE_URL: "http://localhost:3000",
-  DATABASE_URL: "postgresql://build:build@localhost:5432/build",
-  BETTER_AUTH_SECRET: "placeholder-build-secret",
+  APP_DATABASE_URL: "postgresql://build:build@localhost:5432/build",
+  AUTH_DATABASE_URL: "postgresql://build:build@localhost:5432/build",
+  INGRESS_DATABASE_URL: "postgresql://build:build@localhost:5432/build",
+  BETTER_AUTH_SECRET: "placeholder-build-secret-at-least-32-chars",
   ENCRYPTION_KEY: Buffer.alloc(32).toString("base64"),
 };
 
-import { readFileSync } from "node:fs";
-
-function loadLocalEnvFile(): Record<string, string> {
-  const out: Record<string, string> = {};
-  try {
-    const file = readFileSync(".env", "utf8");
-    for (const line of file.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const idx = trimmed.indexOf("=");
-      if (idx !== -1) {
-        const k = trimmed.slice(0, idx).trim();
-        const v = trimmed.slice(idx + 1).trim();
-        if (k && v !== undefined && v !== "") out[k] = v;
-      }
-    }
-  } catch {}
-  return out;
-}
-
 let cached: Env | null = null;
 
-export function getEnv(): Env {
-  if (cached) return cached;
-  const isBuild = process.env.NEXT_PHASE === "phase-production-build";
-  const source = isBuild
-    ? { ...BUILD_PLACEHOLDERS, ...stripEmpty(process.env) }
-    : stripEmpty(process.env);
+const SECRET_NAMES = [
+  "APP_DATABASE_URL",
+  "AUTH_DATABASE_URL",
+  "INGRESS_DATABASE_URL",
+  "MIGRATOR_DATABASE_URL",
+  "BETTER_AUTH_SECRET",
+  "ENCRYPTION_KEY",
+] as const;
 
-  // Garantizar el uso de la BD local en Docker y rechazar Neon en runtime
-  const localEnv = loadLocalEnvFile();
-  if (!isBuild) {
-    const localDb = localEnv.DATABASE_URL || "postgresql://postgres:postgres@127.0.0.1:5432/vocero";
-    if (!source.DATABASE_URL || source.DATABASE_URL.includes("neon")) {
-      source.DATABASE_URL = localDb;
-    }
+export function getEnvFrom(environment: Record<string, string | undefined>): Env {
+  const isBuild = environment.NEXT_PHASE === "phase-production-build";
+  const source = isBuild
+    ? { ...BUILD_PLACEHOLDERS, ...stripEmpty(environment) }
+    : stripEmpty(environment);
+  for (const name of SECRET_NAMES) {
+    const value = resolveSecret(name, environment);
+    if (value !== undefined) source[name] = value;
   }
 
   const parsed = envSchema.safeParse(source);
@@ -118,11 +107,15 @@ export function getEnv(): Env {
         "Revisa .env.example para la guía de cada variable."
     );
   }
-  cached = parsed.data;
+  return parsed.data;
+}
+
+export function getEnv(): Env {
+  if (!cached) cached = getEnvFrom(process.env);
   return cached;
 }
 
-function stripEmpty(env: NodeJS.ProcessEnv): Record<string, string> {
+function stripEmpty(env: Record<string, string | undefined>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(env)) {
     if (v !== undefined && v !== "") out[k] = v;

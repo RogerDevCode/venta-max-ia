@@ -15,8 +15,9 @@ import {
 } from "@/server/ecommerce/service";
 import { createPaymentLink } from "@/server/payments/mercadopago";
 import { renderPriceDisclosure } from "@/server/ecommerce/pricing";
-import { parseSlashCommand, processPendingProductQuantity, processSlashCommand } from "@/server/ai/commands";
+import { parseSlashCommand, processNaturalAddToCart, processPendingProductQuantity, processSlashCommand } from "@/server/ai/commands";
 import { resolveMenuInput, type MenuStateMetadata } from "@/server/ai/menu-fsm";
+import { classifyConversationInput, guardReply } from "@/server/ai/conversation-guard";
 
 /**
  * Turno del agente (FR-021..FR-025).
@@ -193,6 +194,32 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     return;
   }
 
+  if (lastInbound.text) {
+    const guard = classifyConversationInput(lastInbound.text);
+    const previousStrikes = Number(state.guard_offensive_strikes) || 0;
+    if (guard) {
+      const strikes = guard === "offensive" ? previousStrikes + 1 : 0;
+      await db.update(schema.conversation).set({
+        stateMetadata: { ...state, guard_offensive_strikes: strikes },
+        updatedAt: new Date(),
+      }).where(eq(schema.conversation.id, conversationId));
+      await deliverReply(conversation, guardReply(guard, strikes));
+      return;
+    }
+    if (previousStrikes > 0) {
+      await db.update(schema.conversation).set({
+        stateMetadata: { ...state, guard_offensive_strikes: 0 },
+        updatedAt: new Date(),
+      }).where(eq(schema.conversation.id, conversationId));
+    }
+  }
+
+  if (lastInbound.text && await processNaturalAddToCart({
+    conversation,
+    text: lastInbound.text,
+    lastInboundExternalId: lastInbound.externalMessageId,
+  })) return;
+
   if (!conversation.isTest && !profile.enabled) return;
 
   if (!isAiConfigured()) return;
@@ -214,7 +241,9 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // Inyección de RAG y Búsqueda Vectorial Coseno (Paso 3.3)
   const ragResult = await buildRagContext({
     organizationId,
-    query: lastInbound.text,
+    // El Laboratorio es un sandbox: reutiliza el conocimiento persistido sin
+    // abrir conexiones hacia proveedores externos de embeddings.
+    query: conversation.isTest ? null : lastInbound.text,
   });
 
   const stages = await db
@@ -339,21 +368,11 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         organizationId,
         query: action.query,
       });
-      const productList =
-        productos.length > 0
-          ? `📦 Productos encontrados:\n` +
-            productos
-              .map(
-                (p) =>
-                  `${[p.name, p.description].filter(Boolean).join(" — ")} — $${p.price.toLocaleString("es-CL")} CLP (Stock: ${p.stock})`
-              )
-              .join("\n")
-          : `No encontré productos con "${action.query}".`;
-
-      const resText = action.reply
-        ? `${action.reply}\n\n${productList}`
-        : productList;
-
+      const resText = productos.length > 0
+        ? `📦 Productos encontrados:\n${productos
+          .map((p) => `${[p.name, p.description].filter(Boolean).join(" — ")} — $${p.price.toLocaleString("es-CL")} CLP (Stock: ${p.stock})`)
+          .join("\n")}`
+        : `No encontré productos con "${action.query}" en el catálogo actual. Puedo mostrarte las categorías disponibles.`;
       await deliverReply(conversation, resText);
       return;
     }

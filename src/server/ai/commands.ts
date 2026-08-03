@@ -51,6 +51,51 @@ export type SlashCommandType =
   | `order:merge:confirm:${string}`
   | "order:merge:keep";
 
+export type NaturalAddToCartRequest = {
+  quantity: number;
+  query: string;
+};
+
+const SPANISH_QUANTITIES: Record<string, number> = {
+  un: 1,
+  una: 1,
+  uno: 1,
+  dos: 2,
+  tres: 3,
+  cuatro: 4,
+  cinco: 5,
+  seis: 6,
+  siete: 7,
+  ocho: 8,
+  nueve: 9,
+  diez: 10,
+};
+
+/**
+ * Reconoce una petición breve para sumar un producto, sin interpretar preguntas
+ * generales ni elegir por el cliente cuando existen varias presentaciones.
+ */
+export function parseNaturalAddToCart(text?: string | null): NaturalAddToCartRequest | null {
+  if (!text) return null;
+  const clean = text
+    .trim()
+    .toLocaleLowerCase("es-CL")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[¿?¡!.,]/g, "")
+    .replace(/\s+/g, " ");
+  const match = clean.match(/^(?:agrega|anade|pon|ponme|dame|llevo)\s+(?:(\d+|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+)?(?:de\s+)?(.+?)(?:\s+(?:al|a mi) carrito)?$/);
+  if (!match?.[2]) return null;
+  const quantityToken = match[1];
+  const quantityCandidate = quantityToken
+    ? (/^\d+$/.test(quantityToken) ? Number(quantityToken) : SPANISH_QUANTITIES[quantityToken])
+    : 1;
+  const quantity = quantityCandidate ?? 0;
+  const query = match[2].trim();
+  if (!Number.isSafeInteger(quantity) || quantity < 1 || query.length < 2) return null;
+  return { quantity, query };
+}
+
 /** Parsea un texto entrante o payload de botón callback para detectar comandos y menús. */
 export function parseSlashCommand(text?: string | null): SlashCommandType | null {
   if (!text) return null;
@@ -70,6 +115,12 @@ export function parseSlashCommand(text?: string | null): SlashCommandType | null
   if (clean === "r" || clean === "R" || clean === "catalog:return") return "nav:back";
   if (clean === "i" || clean === "I" || clean === "catalog:home") return "nav:home";
   if (clean.toLowerCase() === "confirmar") return "cart:checkout";
+  const natural = clean.toLocaleLowerCase("es-CL").replace(/[¿?¡!.,]/g, "").trim();
+  if (/^(ver |mostrar )?(mi )?carrito$/.test(natural)) return "menu:carrito";
+  if (/^(ver |mostrar )?(mis )?pedidos$/.test(natural)) return "menu:pedidos";
+  if (/^(confirmar|confirmar compra|confirmar pedido|quiero confirmar)$/.test(natural)) return "cart:checkout";
+  if (/^(vaciar|limpiar|borrar) (mi )?carrito$/.test(natural)) return "cart:clear";
+  if (/^(cancelar|anular) (mi )?pedido$/.test(natural)) return "menu:pedidos";
 
   // 2. Manejo de Comandos Slash clásicos (/start, /menu, /reset, /humano)
   if (clean.startsWith("/")) {
@@ -815,6 +866,70 @@ export async function processPendingProductQuantity(input: {
     conversation: { ...input.conversation, stateMetadata: cartState },
     lastInboundExternalId: input.lastInboundExternalId,
     navigationStack: cartState.menu_stack,
+  });
+  return true;
+}
+
+/** Procesa pedidos naturales sólo cuando el producto tiene una única presentación coincidente. */
+export async function processNaturalAddToCart(input: {
+  conversation: Conversation;
+  text: string;
+  lastInboundExternalId?: string | null;
+}): Promise<boolean> {
+  const request = parseNaturalAddToCart(input.text);
+  if (!request) return false;
+
+  const { conversation } = input;
+  const products = await buscarProductos({
+    organizationId: conversation.organizationId,
+    query: request.query,
+  });
+  if (products.length === 0) {
+    await deliverCommandReply(
+      conversation,
+      `No encontré “${request.query}” en el catálogo. Puedes revisar las categorías o escribir el nombre de otra presentación.`,
+      { channel: "telegram" }
+    );
+    return true;
+  }
+  if (products.length > 1) {
+    const options = products.slice(0, 5)
+      .map((product) => `• ${customerProductLabel(product)} · $${product.price.toLocaleString("es-CL")} CLP`)
+      .join("\n");
+    await deliverCommandReply(
+      conversation,
+      `Encontré varias presentaciones de “${request.query}”. Indícame una para no equivocarme:\n${options}\n\nPor ejemplo: “agrega 2 Cristal lata 350”.`,
+      { channel: "telegram" }
+    );
+    return true;
+  }
+
+  const product = products[0]!;
+  const result = await addProductToCart({
+    organizationId: conversation.organizationId,
+    conversationId: conversation.id,
+    productId: product.id,
+    quantity: request.quantity,
+  });
+  if (!result.ok) {
+    const message = result.error === "tenant_limit_exceeded"
+      ? `Puedes agregar como máximo ${result.limit} unidades de este producto.`
+      : result.error === "insufficient_stock"
+        ? `La cantidad solicitada no está disponible. Disponibilidad actual: ${result.available}.`
+        : "No pudimos agregar ese producto al carrito. Intenta nuevamente.";
+    await deliverCommandReply(conversation, message, { channel: "telegram" });
+    return true;
+  }
+
+  await deliverCommandReply(
+    conversation,
+    `✅ Agregamos ${customerProductLabel(result.product)}, cantidad ${request.quantity}, a tu carrito.\n\n🛒 Carrito: ${result.units} productos · Total: $${result.totalAmount.toLocaleString("es-CL")} CLP`,
+    { channel: "telegram" }
+  );
+  await processSlashCommand({
+    command: "menu:carrito",
+    conversation,
+    lastInboundExternalId: input.lastInboundExternalId,
   });
   return true;
 }

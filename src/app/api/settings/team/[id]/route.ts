@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { apiError, withAuth } from "@/lib/api";
-import { getDb, schema } from "@/lib/db";
+import { getAuthDb, getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +49,7 @@ export const DELETE = withAuth(
     }
 
     // Eliminamos la membresía en la organización del tenant
-    await db
+    await getAuthDb()
       .delete(schema.member)
       .where(
         and(
@@ -59,7 +59,7 @@ export const DELETE = withAuth(
       );
 
     // Revocamos las sesiones activas de ese usuario para esta organización
-    await db
+    await getAuthDb()
       .delete(schema.session)
       .where(
         and(

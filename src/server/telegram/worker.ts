@@ -1,5 +1,6 @@
 import { and, inArray, lt } from "drizzle-orm";
-import { getDb, schema } from "@/lib/db";
+import { getAuthDb, getDatabaseContext, getDb, schema } from "@/lib/db";
+import { withJobTransaction } from "@/lib/db/context";
 import { drainTelegramMenuActions } from "@/server/telegram/menu-action-runner";
 import { drainTelegramOutbox } from "@/server/telegram/outbox";
 import { drainTelegramReceipts } from "@/server/telegram/receipt-queue";
@@ -21,7 +22,8 @@ export async function purgeTelegramTerminalRows(batchSize = 500): Promise<number
   const db = getDb();
   const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const connection = await import("@/lib/db").then(({ getSql }) => getSql().reserve());
-  const lock = await connection<{ locked: boolean }[]>`select pg_try_advisory_lock(hashtext('venta-max:telegram-retention')) as locked`;
+  const lockName = `venta-max:telegram-retention:${getDatabaseContext()?.organizationId ?? "global"}`;
+  const lock = await connection<{ locked: boolean }[]>`select pg_try_advisory_lock(hashtext(${lockName})) as locked`;
   if (!lock[0]?.locked) { await connection.release(); return 0; }
   let purged = 0;
   try {
@@ -46,7 +48,7 @@ export async function purgeTelegramTerminalRows(batchSize = 500): Promise<number
     workerGlobal.__telegramReliabilityLastPurgeAt = new Date();
     return purged;
   } finally {
-    await connection`select pg_advisory_unlock(hashtext('venta-max:telegram-retention'))`;
+    await connection`select pg_advisory_unlock(hashtext(${lockName}))`;
     await connection.release();
   }
 }
@@ -58,12 +60,22 @@ export async function drainTelegramReliabilityWork(): Promise<void> {
     const lock = await connection<{ locked: boolean }[]>`select pg_try_advisory_lock(hashtext('venta-max:telegram-worker')) as locked`;
     if (!lock[0]?.locked) { await connection.release(); return; }
     try {
-      await Promise.allSettled([
-        drainTelegramReceipts(),
-        drainTelegramMenuActions(),
-        drainTelegramOutbox(),
-        purgeTelegramTerminalRows(),
-      ]).then((results) => {
+      const organizations = await getAuthDb()
+        .select({ id: schema.organization.id })
+        .from(schema.organization);
+      await Promise.allSettled(organizations.map(({ id }) =>
+        withJobTransaction(id, async () => {
+          const results = await Promise.allSettled([
+            drainTelegramReceipts(),
+            drainTelegramMenuActions(),
+            drainTelegramOutbox(),
+            purgeTelegramTerminalRows(),
+          ]);
+          for (const result of results) {
+            if (result.status === "rejected") logError(result.reason);
+          }
+        })
+      )).then((results) => {
         for (const result of results) if (result.status === "rejected") logError(result.reason);
       });
     } finally {

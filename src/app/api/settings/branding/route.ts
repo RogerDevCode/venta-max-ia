@@ -1,15 +1,23 @@
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getSessionOrNull } from "@/lib/auth/session";
-import { isValidHex, resolveAccentSet } from "@/lib/branding";
+import { DEFAULT_BRANDING, isValidHex, resolveAccentSet } from "@/lib/branding";
 import { getBranding, saveBranding } from "@/server/branding";
+import { withTenantTransaction } from "@/lib/db/context";
 
 export const dynamic = "force-dynamic";
 
 /** GET público: el login necesita la marca antes de autenticarse. */
 export async function GET() {
   const session = await getSessionOrNull();
-  const branding = await getBranding(session?.organizationId);
+  const branding = session
+    ? await withTenantTransaction(
+        session.organizationId,
+        session.userId,
+        "user",
+        () => getBranding(session.organizationId),
+      )
+    : DEFAULT_BRANDING;
   return Response.json({ branding, accentSet: resolveAccentSet(branding.accent) });
 }
 

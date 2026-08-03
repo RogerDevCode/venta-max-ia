@@ -1,5 +1,5 @@
 import { count } from "drizzle-orm";
-import { getDb, schema } from "@/lib/db";
+import { getAuthDb, schema } from "@/lib/db";
 
 /**
  * Registro público cerrado tras la primera organización (FR-060), salvo la
@@ -15,7 +15,7 @@ export async function isPublicSignupAllowed(): Promise<boolean> {
  * Comprueba si ya existe al menos una organización creada en la base de datos.
  */
 export async function hasAnyOrganization(): Promise<boolean> {
-  const db = getDb();
+  const db = getAuthDb();
   const rows = await db.select({ n: count() }).from(schema.organization);
   return (rows[0]?.n ?? 0) > 0;
 }

@@ -1,6 +1,7 @@
 import dns from "node:dns";
 import { eq } from "drizzle-orm";
-import { getDb, schema } from "@/lib/db";
+import { getAuthDb, getDb, schema } from "@/lib/db";
+import { withJobTransaction } from "@/lib/db/context";
 import { startTelegramReliabilityWorker } from "@/server/telegram/worker";
 
 try {
@@ -15,16 +16,24 @@ try {
  */
 export async function cleanupOrphanRuns(): Promise<void> {
   try {
-    const db = getDb();
-    const updated = await db
-      .update(schema.agentTestRun)
-      .set({
-        status: "failed",
-        error: "Interrumpida por un reinicio del servidor",
-        finishedAt: new Date(),
-      })
-      .where(eq(schema.agentTestRun.status, "running"))
-      .returning({ id: schema.agentTestRun.id });
+    const organizations = await getAuthDb().select({ id: schema.organization.id }).from(schema.organization);
+    const updated = (
+      await Promise.all(
+        organizations.map(({ id }) =>
+          withJobTransaction(id, () =>
+            getDb()
+              .update(schema.agentTestRun)
+              .set({
+                status: "failed",
+                error: "Interrumpida por un reinicio del servidor",
+                finishedAt: new Date(),
+              })
+              .where(eq(schema.agentTestRun.status, "running"))
+              .returning({ id: schema.agentTestRun.id }),
+          ),
+        ),
+      )
+    ).flat();
     if (updated.length > 0) {
       console.log(
         `[boot] ${updated.length} corrida(s) del Laboratorio huérfana(s) marcada(s) como fallida(s)`

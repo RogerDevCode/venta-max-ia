@@ -78,16 +78,60 @@ export async function verifySchema(sql, phase = process.env.SCHEMA_VERIFY_PHASE 
     const row = byConstraint.get(name);
     if (!row?.convalidated) errors.push(`missing or invalid constraint ${name}`);
   }
+  const securityTables = await sql.unsafe(`
+    select c.relname as table_name, c.relrowsecurity as rls,
+      c.relforcerowsecurity as force_rls, r.rolname as owner
+    from pg_class c
+    join pg_namespace n on n.oid=c.relnamespace
+    join pg_roles r on r.oid=c.relowner
+    where n.nspname='public' and c.relkind='r'
+  `);
+  const policyTables = new Set((await sql.unsafe(`
+    select distinct tablename from pg_policies where schemaname='public'
+  `)).map((row) => row.tablename));
+  for (const table of securityTables) {
+    if (!table.rls || !table.force_rls) errors.push(`RLS no forzada en ${table.table_name}`);
+    if (table.owner !== "venta_owner") errors.push(`propietario incorrecto en ${table.table_name}`);
+    if (!policyTables.has(table.table_name)) errors.push(`sin policy en ${table.table_name}`);
+  }
+  const roleAttributes = await sql.unsafe(`
+    select rolname, rolcreatedb, rolreplication, rolsuper, rolcreaterole, rolbypassrls
+    from pg_roles
+    where rolname in ('venta_migrator','venta_app','venta_auth','venta_ingress','venta_backup','venta_restore')
+  `);
+  const expectedRoles = new Map([
+    ["venta_migrator", [false, false, false]],
+    ["venta_app", [false, false, false]],
+    ["venta_auth", [false, false, false]],
+    ["venta_ingress", [false, false, false]],
+    // Solo el rol offline de respaldo atraviesa RLS para producir un dump
+    // completo. No se entrega al runtime ni conserva privilegios DDL.
+    ["venta_backup", [false, false, true]],
+    ["venta_restore", [true, false, false]],
+  ]);
+  for (const role of roleAttributes) {
+    const expected = expectedRoles.get(role.rolname);
+    if (!expected || role.rolcreatedb !== expected[0] || role.rolreplication !== expected[1]
+      || role.rolbypassrls !== expected[2] || role.rolsuper || role.rolcreaterole) {
+      errors.push(`atributos inesperados en ${role.rolname}`);
+    }
+  }
+  if (roleAttributes.length !== 6) errors.push("faltan roles runtime esperados");
+  const privileges = await sql.unsafe(`
+    select has_schema_privilege('venta_app','public','CREATE') as app_create,
+      has_database_privilege('venta_restore',current_database(),'CONNECT') as restore_connect
+  `);
+  if (privileges[0]?.app_create) errors.push("venta_app puede crear en public");
+  if (privileges[0]?.restore_connect) errors.push("venta_restore conserva CONNECT");
   if (errors.length) throw new Error(`Schema verification failed:\n${errors.join("\n")}`);
 }
 
 async function main() {
-  let url = process.env.DATABASE_URL;
-  if (!url || url.includes("neon")) {
-    url = "postgresql://postgres:postgres@127.0.0.1:5432/vocero";
-  }
+  const url = process.env.MIGRATOR_DATABASE_URL;
+  if (!url) throw new Error("MIGRATOR_DATABASE_URL es requerida");
   const sql = postgres(url, { max: 1, onnotice: () => {} });
   try {
+    await sql.unsafe("set role venta_owner");
     await verifySchema(sql);
     console.log("[schema] verificación semántica PASS");
   } finally {
@@ -95,6 +139,6 @@ async function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (process.argv[1]?.endsWith("verify-schema.mjs")) {
   main().catch((error) => { console.error(error); process.exitCode = 1; });
 }

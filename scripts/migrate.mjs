@@ -74,14 +74,13 @@ async function requireDestructiveConsent(sql) {
 }
 
 export async function runMigrations({ databaseUrl } = {}) {
-  let url = databaseUrl ?? process.env.DATABASE_URL;
-  if (!url || url.includes("neon")) {
-    url = "postgresql://postgres:postgres@127.0.0.1:5432/vocero";
-  }
+  const url = databaseUrl ?? process.env.MIGRATOR_DATABASE_URL;
+  if (!url) throw new Error("MIGRATOR_DATABASE_URL es requerida");
   const maxAttempts = 15;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const sql = postgres(url, { max: 1, onnotice: () => {} });
     try {
+      await sql.unsafe("set role venta_owner");
       // pgvector forma parte del esquema versionado. Garantizar la extensión
       // antes del journal hace que un volumen nuevo sea reproducible y evita
       // que una migración falle a mitad de la inicialización por no reconocer

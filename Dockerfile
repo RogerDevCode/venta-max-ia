@@ -23,6 +23,12 @@ RUN pnpm exec esbuild scripts/migrate.mjs --bundle --platform=node \
 RUN pnpm exec esbuild scripts/seed/demo.ts --bundle --platform=node \
     --format=esm --outfile=seed-demo.bundle.mjs --alias:@=./src \
     --banner:js="import { createRequire } from 'module'; const require = createRequire(import.meta.url);"
+RUN pnpm exec esbuild scripts/seed-botilleria.ts --bundle --platform=node \
+    --format=esm --outfile=seed-botilleria.bundle.mjs --alias:@=./src \
+    --banner:js="import { createRequire } from 'module'; const require = createRequire(import.meta.url);"
+RUN pnpm exec esbuild scripts/seed-botilleria-faq.ts --bundle --platform=node \
+    --format=esm --outfile=seed-botilleria-faq.bundle.mjs --alias:@=./src \
+    --banner:js="import { createRequire } from 'module'; const require = createRequire(import.meta.url);"
 
 FROM node:22-alpine AS runner
 WORKDIR /app
@@ -35,6 +41,8 @@ COPY --from=builder --chown=ventamaxia:ventamaxia /app/.next/static ./.next/stat
 COPY --from=builder --chown=ventamaxia:ventamaxia /app/public ./public
 COPY --from=builder --chown=ventamaxia:ventamaxia /app/migrate.bundle.mjs ./migrate.mjs
 COPY --from=builder --chown=ventamaxia:ventamaxia /app/seed-demo.bundle.mjs ./seed-demo.mjs
+COPY --from=builder --chown=ventamaxia:ventamaxia /app/seed-botilleria.bundle.mjs ./seed-botilleria.mjs
+COPY --from=builder --chown=ventamaxia:ventamaxia /app/seed-botilleria-faq.bundle.mjs ./seed-botilleria-faq.mjs
 COPY --from=builder --chown=ventamaxia:ventamaxia /app/drizzle ./drizzle
 COPY --from=builder --chown=ventamaxia:ventamaxia /app/drizzle /drizzle
 
@@ -47,5 +55,8 @@ ENV HOSTNAME=0.0.0.0
 HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
   CMD wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1
 
-# Migrar al BOOT del contenedor nuevo y arrancar el server standalone
-CMD ["sh", "-c", "node migrate.mjs && node server.js"]
+FROM runner AS migrator
+CMD ["node", "migrate.mjs"]
+
+FROM runner AS app-runtime
+CMD ["node", "server.js"]

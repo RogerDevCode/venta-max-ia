@@ -4,6 +4,7 @@ import { getBranding } from "@/server/branding";
 import { hasAnyOrganization } from "@/server/auth/registration";
 import { AppNav } from "@/components/app-nav";
 import { ThemeBackgroundGrid } from "@/app/(auth)/auth-theme-context";
+import { withTenantTransaction } from "@/lib/db/context";
 
 export default async function AppLayout({
   children,
@@ -13,7 +14,12 @@ export default async function AppLayout({
     const orgExists = await hasAnyOrganization();
     redirect(orgExists ? "/login" : "/register");
   }
-  const branding = await getBranding(session.organizationId);
+  const branding = await withTenantTransaction(
+    session.organizationId,
+    session.userId,
+    "user",
+    () => getBranding(session.organizationId),
+  );
 
   return (
     <div className="relative flex h-screen overflow-hidden bg-background transition-colors duration-500">

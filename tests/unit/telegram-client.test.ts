@@ -15,7 +15,7 @@ beforeAll(() => {
   vi.stubGlobal("fetch", fetchMock);
   process.env.APP_BASE_URL = "http://localhost:3000";
   process.env.DATABASE_URL = "postgresql://test:test@localhost:5432/test";
-  process.env.BETTER_AUTH_SECRET = "secret-suficiente-para-tests";
+  process.env.BETTER_AUTH_SECRET = "secret-suficiente-para-tests".padEnd(32, "x");
   process.env.ENCRYPTION_KEY = Buffer.alloc(32, 9).toString("base64");
   process.env.META_WEBHOOK_VERIFY_TOKEN = "verify-test";
   process.env.TELEGRAM_ADMIN_BOT_TOKEN = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11";

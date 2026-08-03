@@ -28,10 +28,15 @@ beforeAll(() => {
   vi.stubGlobal("fetch", fetchMock);
   process.env.APP_BASE_URL = "http://localhost:3000";
   process.env.DATABASE_URL = "postgresql://test:test@localhost:5432/test";
-  process.env.BETTER_AUTH_SECRET = "secret-suficiente-para-tests";
+  process.env.BETTER_AUTH_SECRET = "secret-suficiente-para-tests".padEnd(32, "x");
   process.env.ENCRYPTION_KEY = Buffer.alloc(32, 9).toString("base64");
   process.env.META_WEBHOOK_VERIFY_TOKEN = "verify-test";
   process.env.PROVIDER_API_TOKEN = "token-test-rag";
+  process.env.EMBEDDING_PROVIDER = "openrouter";
+  process.env.EMBEDDING_MODEL = "text-embedding-3-small";
+  process.env.PROVIDER_BASE_URL = "https://openrouter.ai/api";
+  delete process.env.GEMINI_API_KEY;
+  delete process.env.NVIDIA_API_KEY;
 });
 
 afterEach(() => {

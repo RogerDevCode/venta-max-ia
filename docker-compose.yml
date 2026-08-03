@@ -4,15 +4,19 @@
 # ============================================================
 services:
   app:
-    build: .
+    build:
+      context: .
+      target: app-runtime
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
-      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/vocero
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-default_secret_vocero_crm_change_me}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      APP_BASE_URL: ${APP_BASE_URL:?APP_BASE_URL requerido}
+      APP_DATABASE_URL: postgresql://venta_app:${VENTA_APP_PASSWORD:?VENTA_APP_PASSWORD requerido}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB requerido}
+      AUTH_DATABASE_URL: postgresql://venta_auth:${VENTA_AUTH_PASSWORD:?VENTA_AUTH_PASSWORD requerido}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB requerido}
+      INGRESS_DATABASE_URL: postgresql://venta_ingress:${VENTA_INGRESS_PASSWORD:?VENTA_INGRESS_PASSWORD requerido}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB requerido}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET requerido}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY requerido}
       META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-vocero_verify_token}
       META_APP_SECRET: ${META_APP_SECRET:-}
       META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v25.0}
@@ -36,25 +40,45 @@ services:
       CLOUDFLARE_TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
       WA_MOCK_ENABLED: ${WA_MOCK_ENABLED:-false}
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     networks:
       - vocero_net
     # el HEALTHCHECK vive en el Dockerfile (/api/health)
 
+  migrator:
+    build:
+      context: .
+      target: migrator
+    restart: "no"
+    environment:
+      MIGRATOR_DATABASE_URL: postgresql://venta_migrator:${VENTA_MIGRATOR_PASSWORD:?VENTA_MIGRATOR_PASSWORD requerido}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB requerido}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - vocero_net
+
   postgres:
-    image: pgvector/pgvector:pg18
+    image: pgvector/pgvector:0.8.5-pg18-bookworm
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: vocero
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER requerido}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requerido}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB requerido}
+      VENTA_MIGRATOR_PASSWORD: ${VENTA_MIGRATOR_PASSWORD:?VENTA_MIGRATOR_PASSWORD requerido}
+      VENTA_APP_PASSWORD: ${VENTA_APP_PASSWORD:?VENTA_APP_PASSWORD requerido}
+      VENTA_AUTH_PASSWORD: ${VENTA_AUTH_PASSWORD:?VENTA_AUTH_PASSWORD requerido}
+      VENTA_INGRESS_PASSWORD: ${VENTA_INGRESS_PASSWORD:?VENTA_INGRESS_PASSWORD requerido}
+      VENTA_BACKUP_PASSWORD: ${VENTA_BACKUP_PASSWORD:?VENTA_BACKUP_PASSWORD requerido}
+      VENTA_RESTORE_PASSWORD: ${VENTA_RESTORE_PASSWORD:?VENTA_RESTORE_PASSWORD requerido}
     volumes:
       - vocero_pg:/var/lib/postgresql
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     networks:
       - vocero_net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d vocero"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -73,7 +97,8 @@ services:
       - vocero_caddy_data:/data
       - vocero_caddy_config:/config
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     networks:
       vocero_net:
         aliases:

@@ -4,51 +4,46 @@
  * Se bundlea con esbuild (alias @ → ./src).
  */
 import { readFileSync } from "node:fs";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
-import * as schema from "@/lib/db/schema";
+import { getAuthDb, getDb, schema } from "@/lib/db";
+import { withJobTransaction } from "@/lib/db/context";
 import { seedDemo, isDomainEmpty } from "@/server/seed/demo";
 
-function loadEnvVar(name: string): string | undefined {
-  try {
-    const env = readFileSync(".env", "utf8");
-    const line = env.split(/\r?\n/).find((l) => l.trim().startsWith(`${name}=`));
-    if (line) return line.trim().slice(name.length + 1).trim();
-  } catch {}
-  return process.env[name];
+try {
+  for (const line of readFileSync(".env", "utf8").split(/\r?\n/)) {
+    const index = line.indexOf("=");
+    if (index > 0 && !line.trim().startsWith("#")) {
+      const key = line.slice(0, index).trim();
+      if (!process.env[key]) process.env[key] = line.slice(index + 1).trim();
+    }
+  }
+} catch {
+  // En el contenedor las variables llegan por el entorno y no existe .env.
 }
 
-const url = loadEnvVar("DATABASE_URL");
-if (!url) {
-  console.error("[seed] DATABASE_URL no está definida");
-  process.exit(1);
-}
-
-const sql = postgres(url, { max: 1, onnotice: () => {} });
-const db = drizzle(sql, { schema });
-
-const orgs = await db.select().from(schema.organization).limit(1);
+const orgs = await getAuthDb().select().from(schema.organization).limit(1);
 const org = orgs[0];
 if (!org) {
   console.error(
     "[seed] No hay organización: regístrate primero en la app y vuelve a correr el seed"
   );
-  await sql.end();
   process.exit(1);
 }
 
 const force = process.argv.includes("--force");
-if (!force && !(await isDomainEmpty(db, org.id))) {
+const result = await withJobTransaction(org.id, async () => {
+  const db = getDb();
+  if (!force && !(await isDomainEmpty(db, org.id))) {
+    throw new Error("La organización ya tiene datos. Usa --force para recargar la demo.");
+  }
+  return seedDemo(db, org.id);
+});
+if (!result) {
   console.error(
     "[seed] La organización ya tiene datos. Usa --force para recargar la demo."
   );
-  await sql.end();
   process.exit(1);
 }
-
-const result = await seedDemo(db, org.id);
 console.log(
   `[seed] Ferretería El Martillo cargada: ${result.contacts} contactos, ${result.kbEntries} entradas de KB, 1 corrida de ejemplo`
 );
-await sql.end();
 process.exit(0);

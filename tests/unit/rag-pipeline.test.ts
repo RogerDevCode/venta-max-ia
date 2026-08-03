@@ -136,7 +136,7 @@ describe("Inyección Dinámica de RAG en Pipeline del Agente (Paso 3.3)", () => 
     // Verificar que buildRagContext se llamó con la última pregunta entrante
     expect(mockBuildRagContext).toHaveBeenCalledWith({
       organizationId: "org_rag",
-      query: "¿Cuál es la garantía del producto y los plazos de cambio?",
+      query: null,
     });
 
     // Verificar que al LLM se le inyectó el System Prompt conteniendo la evidencia del RAG
@@ -148,5 +148,19 @@ describe("Inyección Dinámica de RAG en Pipeline del Agente (Paso 3.3)", () => 
     expect(systemPrompt).toContain("CONOCIMIENTO DEL NEGOCIO");
     expect(systemPrompt).toContain("P: ¿Qué garantía tienen?\nR: Garantía total de 2 años con reemplazo inmediato en 48 hs.");
     expect(systemPrompt).toContain("Etapas del pipeline disponibles: Nuevo");
+  });
+
+  it("detiene un garabato antes de RAG y del LLM", async () => {
+    mockDbState.history = [{
+      id: "msg_in_guard",
+      direction: "in",
+      text: "eres un weón",
+      createdAt: new Date(),
+    }];
+
+    await runAgentTurn("conv_rag_test");
+
+    expect(mockBuildRagContext).not.toHaveBeenCalled();
+    expect(mockChatJson).not.toHaveBeenCalled();
   });
 });

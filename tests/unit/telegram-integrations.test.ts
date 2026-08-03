@@ -57,6 +57,15 @@ vi.mock("@/lib/db", () => ({
       },
     }),
   }),
+  getIngressSql: () => (_strings: TemplateStringsArray, tokenHash: string) =>
+    Promise.resolve(rows
+      .filter((row) => row.webhookTokenHash === tokenHash)
+      .map((row) => ({
+        id: row.id,
+        organization_id: row.organizationId,
+        webhook_header_secret_hash: row.webhookHeaderSecretHash ?? null,
+        status: row.status ?? "connected",
+      }))),
 }));
 
 describe("integraciones Telegram", () => {

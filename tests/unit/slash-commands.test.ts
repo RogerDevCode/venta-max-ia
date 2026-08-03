@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { parseSlashCommand, processPendingProductQuantity, processSlashCommand } from "@/server/ai/commands";
+import { parseNaturalAddToCart, parseSlashCommand, processNaturalAddToCart, processPendingProductQuantity, processSlashCommand } from "@/server/ai/commands";
 
 const { mockUpdateSet, mockSendText, mockSchema, mockDbState, mockApplyHandoff, mockBuscarProductos, mockListarCategorias, mockListCatalogProducts, mockGetProduct, mockAddProduct, mockListActiveOrders, mockGetOrder, mockConfirmOrder, mockMergeOrder } = vi.hoisted(() => {
   const schemaObj = {
@@ -131,6 +131,61 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       expect(parseSlashCommand("12")).toBe("catalog:number:12");
       expect(parseSlashCommand("catalog:product:prod_1")).toBe("catalog:product:prod_1");
       expect(parseSlashCommand("confirmar")).toBe("cart:checkout");
+      expect(parseSlashCommand("ver mi carrito")).toBe("menu:carrito");
+      expect(parseSlashCommand("mostrar mis pedidos")).toBe("menu:pedidos");
+      expect(parseSlashCommand("confirmar pedido")).toBe("cart:checkout");
+      expect(parseSlashCommand("vaciar mi carrito")).toBe("cart:clear");
+      expect(parseSlashCommand("cancelar mi pedido")).toBe("menu:pedidos");
+    });
+  });
+
+  describe("1.1 Pedidos naturales deterministas", () => {
+    it("reconoce producto y cantidad en lenguaje chileno sin adivinar variantes", () => {
+      expect(parseNaturalAddToCart("Agrega 2 Cristal lata 350 al carrito"))
+        .toEqual({ quantity: 2, query: "cristal lata 350" });
+      expect(parseNaturalAddToCart("dame una coca cola zero"))
+        .toEqual({ quantity: 1, query: "coca cola zero" });
+      expect(parseNaturalAddToCart("ponme papas fritas"))
+        .toEqual({ quantity: 1, query: "papas fritas" });
+    });
+
+    it("no convierte preguntas, cantidades inválidas ni textos ambiguos en una compra", () => {
+      expect(parseNaturalAddToCart("quiero saber el precio de una cristal")).toBeNull();
+      expect(parseNaturalAddToCart("agrega 0 cristal lata")).toBeNull();
+      expect(parseNaturalAddToCart("agrega a")).toBeNull();
+    });
+
+    it("suma sólo una presentación inequívoca y no deja que el modelo elija por el cliente", async () => {
+      mockBuscarProductos.mockResolvedValueOnce([
+        { id: "prod_cristal_lata", name: "Cristal Lata 350 ml", description: "Cerveza", price: 1500, stock: 20 },
+      ]);
+      mockAddProduct.mockResolvedValueOnce({
+        ok: true,
+        product: { name: "Cristal Lata 350 ml", description: "Cerveza" },
+        units: 2,
+        totalAmount: 3000,
+      });
+
+      await expect(processNaturalAddToCart({
+        conversation: mockDbState.conversation as never,
+        text: "agrega 2 cristal lata 350",
+      })).resolves.toBe(true);
+      expect(mockAddProduct).toHaveBeenCalledWith(expect.objectContaining({
+        productId: "prod_cristal_lata", quantity: 2,
+      }));
+
+      mockBuscarProductos.mockResolvedValueOnce([
+        { id: "prod_lata", name: "Cristal Lata 350 ml", description: "Cerveza", price: 1500, stock: 20 },
+        { id: "prod_botella", name: "Cristal Botella 330 ml", description: "Cerveza", price: 1400, stock: 20 },
+      ]);
+      await expect(processNaturalAddToCart({
+        conversation: mockDbState.conversation as never,
+        text: "dame dos cristal",
+      })).resolves.toBe(true);
+      expect(mockAddProduct).toHaveBeenCalledTimes(1);
+      expect(mockSendText).toHaveBeenLastCalledWith(expect.objectContaining({
+        text: expect.stringContaining("varias presentaciones"),
+      }));
     });
   });
 

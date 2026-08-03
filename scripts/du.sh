@@ -6,6 +6,7 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "$PROJECT_DIR"
+"$SCRIPT_DIR/generate-local-secrets.sh"
 
 # Por defecto usa docker-compose.dev.yml, salvo que se pase otro archivo como argumento
 COMPOSE_FILE="${1:-docker-compose.dev.yml}"
@@ -69,6 +70,16 @@ while [ $ELAPSED -lt $MAX_WAIT_SECONDS ]; do
   STARTING_CONTAINERS=$(echo "$CONTAINER_INFO" | grep -iE "starting|restarting|created" || true)
 
   if [ -z "$STARTING_CONTAINERS" ]; then
+    if [ "$COMPOSE_FILE" = "docker-compose.dev.yml" ]; then
+      ENV_FILE="$PROJECT_DIR/.env" COMPOSE_FILE="$PROJECT_DIR/$COMPOSE_FILE" \
+        "$SCRIPT_DIR/bootstrap-postgres-roles.sh"
+      set -a
+      # shellcheck disable=SC1091
+      . "$PROJECT_DIR/.env"
+      set +a
+      export MIGRATOR_DATABASE_URL="${MIGRATOR_DATABASE_URL/@postgres:/@127.0.0.1:}"
+      pnpm db:migrate
+    fi
     echo ""
     echo "=========================================================="
     echo "==> [DU] Todos los procesos Docker están arriba y saludables."

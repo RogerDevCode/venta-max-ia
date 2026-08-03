@@ -74,8 +74,14 @@ fi
 echo "==> [RUN] Iniciando servidor Next.js en http://localhost:${PORT} con ${PKG_MANAGER}..."
 export PORT="$PORT"
 export NODE_OPTIONS="${NODE_OPTIONS:-} --dns-result-order=ipv4first"
-if [ -z "${DATABASE_URL:-}" ] || [[ "${DATABASE_URL:-}" == *"neon"* ]]; then
-  export DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/vocero"
-fi
+set -a
+# shellcheck disable=SC1091
+. ./.env
+set +a
+for variable in APP_DATABASE_URL AUTH_DATABASE_URL INGRESS_DATABASE_URL; do
+  value="${!variable:-}"
+  [ -n "$value" ] || { echo "[-] $variable es requerida" >&2; exit 2; }
+  export "$variable=${value/@postgres:/@127.0.0.1:}"
+done
 
 exec $PKG_MANAGER dev

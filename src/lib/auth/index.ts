@@ -3,7 +3,7 @@ import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { organization } from "better-auth/plugins";
-import { getDb, schema } from "@/lib/db";
+import { getAuthDb, schema } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { AUTH_RATE_LIMIT, checkRateLimit } from "@/lib/rate-limit";
 import {
@@ -46,7 +46,7 @@ function createAuth() {
     baseURL: env.APP_BASE_URL,
     trustedOrigins: [env.APP_BASE_URL, "http://localhost:3000", "http://127.0.0.1:3000"],
     secret: env.BETTER_AUTH_SECRET,
-    database: drizzleAdapter(getDb(), {
+    database: drizzleAdapter(getAuthDb(), {
       provider: "pg",
       schema: {
         user: schema.user,

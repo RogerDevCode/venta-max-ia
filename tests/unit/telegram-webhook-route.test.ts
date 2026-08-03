@@ -31,6 +31,10 @@ vi.mock("@/server/telegram/integrations", () => ({
   }),
 }));
 
+vi.mock("@/lib/db/context", () => ({
+  withIngressTransaction: (_organizationId: string, callback: () => Promise<unknown>) => callback(),
+}));
+
 import { POST } from "@/app/api/webhooks/telegram/[webhookToken]/route";
 
 const params = { params: Promise.resolve({ webhookToken: "ruta-opaca" }) };

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getAuth, runInternalSignup } from "@/lib/auth";
-import { getDb, schema } from "@/lib/db";
+import { getAuthDb, getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 
@@ -68,8 +68,7 @@ export const POST = withAuth(async (session, req: Request) => {
     return apiError(422, "invalid", message);
   }
 
-  const db = getDb();
-  await db
+  await getAuthDb()
     .insert(schema.member)
     .values({
       id: newId("organization"),

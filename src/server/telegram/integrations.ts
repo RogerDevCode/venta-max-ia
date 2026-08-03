@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import { getDb, schema } from "@/lib/db";
+import { getDb, getIngressSql, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 
@@ -65,23 +65,21 @@ export function hashTelegramWebhookToken(token: string): string {
 export async function findTelegramIntegrationByWebhookToken(
   webhookToken: string
 ): Promise<TelegramIntegrationRoute | null> {
-  const db = getDb();
-  const rows = await db
-    .select({
-      id: schema.telegramIntegration.id,
-      organizationId: schema.telegramIntegration.organizationId,
-      status: schema.telegramIntegration.status,
-      webhookHeaderSecretHash: schema.telegramIntegration.webhookHeaderSecretHash,
-    })
-    .from(schema.telegramIntegration)
-    .where(
-      eq(
-        schema.telegramIntegration.webhookTokenHash,
-        hashTelegramWebhookToken(webhookToken)
-      )
-    )
-    .limit(1);
-  return rows[0] ?? null;
+  const rows = await getIngressSql()<{
+    id: string;
+    organization_id: string;
+    webhook_header_secret_hash: string | null;
+    status: TelegramIntegrationRoute["status"];
+  }[]>`select * from app_security.resolve_telegram_webhook(${hashTelegramWebhookToken(webhookToken)})`;
+  const row = rows[0];
+  return row
+    ? {
+        id: row.id,
+        organizationId: row.organization_id,
+        status: row.status,
+        webhookHeaderSecretHash: row.webhook_header_secret_hash,
+      }
+    : null;
 }
 
 /**

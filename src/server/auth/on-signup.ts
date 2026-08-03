@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { count, eq, sql } from "drizzle-orm";
-import { getDb, schema } from "@/lib/db";
+import { getAuthDb, getDb, schema } from "@/lib/db";
+import { withTenantTransaction } from "@/lib/db/context";
 import { newId } from "@/lib/db/ids";
 
 /** Etapas sembradas del pipeline (US2). */
@@ -21,7 +22,8 @@ const SEED_STAGES: { name: string; kind: "open" | "won" | "lost" }[] = [
  * dos registros simultáneos en instancia vacía creen dos organizaciones.
  */
 export async function onUserCreated(userId: string, userName: string) {
-  const db = getDb();
+  const db = getAuthDb();
+  let createdOrgId: string | null = null;
   await db.transaction(async (tx) => {
     // Lock transaccional de "primer arranque" (clave arbitraria fija):
     // dos registros simultáneos en instancia vacía → solo uno crea la org.
@@ -32,6 +34,7 @@ export async function onUserCreated(userId: string, userName: string) {
     if ((orgs?.n ?? 0) > 0) return;
 
     const orgId = newId("organization");
+    createdOrgId = orgId;
     await tx.insert(schema.organization).values({
       id: orgId,
       name: userName ? `Negocio de ${userName}` : "Mi negocio",
@@ -43,20 +46,25 @@ export async function onUserCreated(userId: string, userName: string) {
       userId,
       role: "owner",
     });
-    await tx.insert(schema.pipelineStage).values(
-      SEED_STAGES.map((s, i) => ({
-        id: newId("stage"),
-        organizationId: orgId,
-        name: s.name,
-        position: i,
-        kind: s.kind,
-      }))
-    );
-    await tx.insert(schema.agentProfile).values({
-      id: newId("agentProfile"),
-      organizationId: orgId,
-    });
   });
+  if (createdOrgId) {
+    await withTenantTransaction(createdOrgId, userId, "system", async () => {
+      const tenantDb = getDb();
+      await tenantDb.insert(schema.pipelineStage).values(
+        SEED_STAGES.map((s, i) => ({
+          id: newId("stage"),
+          organizationId: createdOrgId!,
+          name: s.name,
+          position: i,
+          kind: s.kind,
+        })),
+      );
+      await tenantDb.insert(schema.agentProfile).values({
+        id: newId("agentProfile"),
+        organizationId: createdOrgId!,
+      });
+    });
+  }
 }
 
 /** Organización activa de un usuario (su primera membresía). */
@@ -86,7 +94,7 @@ export const resolveMembership = cache(async (
     return cached.membership;
   }
 
-  const db = getDb();
+  const db = getAuthDb();
   const rows = await db
     .select({
       organizationId: schema.member.organizationId,

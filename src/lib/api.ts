@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { requireSession, UnauthorizedError, type SessionContext } from "@/lib/auth/session";
+import { withTenantTransaction } from "@/lib/db/context";
 
 /** Respuesta de error estándar de la API interna (contrato api.md). */
 export function apiError(
@@ -28,7 +29,12 @@ export function withAuth<Args extends unknown[]>(
       throw err;
     }
     try {
-      return await handler(session, ...args);
+      return await withTenantTransaction(
+        session.organizationId,
+        session.userId,
+        "user",
+        () => handler(session, ...args),
+      );
     } catch (err) {
       console.error("[api] error no controlado:", err);
       return apiError(500, "internal", "Error interno");
