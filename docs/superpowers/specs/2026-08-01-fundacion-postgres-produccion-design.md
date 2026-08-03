@@ -47,7 +47,9 @@ postgres bootstrap (solo provisionamiento local/operador)
   ├─ venta_owner       NOLOGIN, dueño de esquema y objetos
   ├─ venta_migrator    LOGIN, NOBYPASSRLS, puede SET ROLE venta_owner solo para DDL
   ├─ venta_app         LOGIN, NOBYPASSRLS, DML explícito y sin DDL
-  └─ venta_ingress     LOGIN, NOBYPASSRLS, solo funciones de resolución/verificación de webhook
+  ├─ venta_ingress     LOGIN, NOBYPASSRLS, solo funciones de resolución/verificación de webhook
+  ├─ venta_backup      LOGIN operativo, lectura global y sin escritura
+  └─ venta_restore     LOGIN operativo, solo bases temporales de simulacro
 ```
 
 `venta_app` no será miembro de `venta_owner`, no tendrá `SUPERUSER`,
@@ -55,7 +57,12 @@ postgres bootstrap (solo provisionamiento local/operador)
 un límite configurable. Las contraseñas se proporcionan en secretos del entorno
 de despliegue, no en SQL ni en archivos versionados.
 
-El rol de migración recibe su URL exclusivamente en el job/contendor de
+`venta_backup` puede omitir RLS únicamente para generar un dump completo de
+todos los tenants. No recibe DDL ni escritura y su credencial no está disponible
+en el proceso web. `venta_restore` se usa de forma efímera y no puede elegir la
+base operativa como destino del simulacro.
+
+El rol de migración recibe su URL exclusivamente en el job/contenedor de
 migración. La URL de la aplicación usa `venta_app`. Una tarea de bootstrap
 idempotente crea o reconcilia roles, grants y ownership en una base nueva.
 
@@ -135,6 +142,9 @@ privilegio.
 - Las variables críticas (`DATABASE_URL`, secretos de auth/cifrado, URLs
   públicas y credenciales de roles) son obligatorias y se validan al inicio;
   valores de ejemplo no son fallback válido en producción.
+- Los secretos pueden llegar mediante archivos `*_FILE`. Desarrollo genera
+  credenciales aleatorias en un archivo ignorado con permiso `0600`; tampoco
+  usa `postgres/postgres` como fallback.
 - Logs no imprimen URLs de conexión, secretos, tokens ni cuerpos de webhook.
 - Healthcheck distingue disponibilidad del proceso de disponibilidad de base y
   verificación de esquema. Readiness solo pasa después de migración y
@@ -154,6 +164,12 @@ privilegio.
    exigiendo respaldo/restauración al aplicarse sobre datos heredados.
 6. `pnpm typecheck`, `pnpm test`, build de Docker, healthchecks y scripts de
    verificación de esquema terminan correctamente.
+7. Un inventario automático clasifica toda tabla pública como tenant,
+   identidad/global restringida o técnica permitida; una tabla nueva sin
+   política hace fallar CI.
+8. Un dump real restaurado en una base temporal supera verificación de esquema,
+   conteos, pgvector y pruebas de bypass, y registra duración y checksum sin
+   exponer datos.
 
 ## Fuentes técnicas
 
