@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 for (const line of readFileSync(".env", "utf8").split(/\r?\n/)) {
   const index = line.indexOf("=");
-  if (index > 0 && !line.trim().startsWith("#")) process.env[line.slice(0, index).trim()] = line.slice(index + 1).trim();
+  if (index > 0 && !line.trim().startsWith("#")) process.env[line.slice(0, index).trim()] ??= line.slice(index + 1).trim();
 }
 
 describe("Telegram reliability schema", () => {

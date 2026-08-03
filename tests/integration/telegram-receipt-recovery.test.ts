@@ -8,7 +8,7 @@ import { registerTelegramWebhookReceipt } from "@/server/telegram/integrations";
 
 for (const line of readFileSync(".env", "utf8").split(/\r?\n/)) {
   const index = line.indexOf("=");
-  if (index > 0 && !line.trim().startsWith("#")) process.env[line.slice(0, index).trim()] = line.slice(index + 1).trim();
+  if (index > 0 && !line.trim().startsWith("#")) process.env[line.slice(0, index).trim()] ??= line.slice(index + 1).trim();
 }
 
 const db = getDb();

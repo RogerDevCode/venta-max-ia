@@ -4,6 +4,8 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 ENV_FILE=${ENV_FILE:-$ROOT/.env}
 COMPOSE_FILE=${COMPOSE_FILE:-$ROOT/docker-compose.yml}
 BACKUP_DIR=${BACKUP_DIR:-$ROOT/backups}
+case "$ENV_FILE" in /*) ;; *) ENV_FILE="$(pwd)/$ENV_FILE" ;; esac
+case "$COMPOSE_FILE" in /*) ;; *) COMPOSE_FILE="$(pwd)/$COMPOSE_FILE" ;; esac
 set -a
 # shellcheck disable=SC1090
 . "$ENV_FILE"

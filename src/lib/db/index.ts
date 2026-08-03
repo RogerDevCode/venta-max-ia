@@ -21,14 +21,23 @@ function createClient(databaseUrl: string, max: number) {
   });
 }
 
+function testDatabaseUrl(): string | undefined {
+  // La URL administrativa de fixtures se inyecta sólo por el runner de QA.
+  // No hay fallback al migrador: ese rol tampoco debe modificar datos de
+  // negocio fuera de una migración controlada.
+  const testUrl = process.env.TEST_DATABASE_URL;
+  if (process.env.NODE_ENV === "production" && testUrl) {
+    throw new Error("La conexión de pruebas no se permite en producción");
+  }
+  return testUrl;
+}
+
 export function getSql() {
   if (!globalForDb.__ventaMaxIaSql) {
     // Las suites de integración administran fixtures transitorios y requieren
-    // una conexión explícita distinta del rol de producción. Nunca se acepta
-    // este escape fuera de NODE_ENV=test.
-    const testUrl = process.env.NODE_ENV === "test"
-      ? process.env.TEST_DATABASE_URL
-      : undefined;
+    // una conexión explícita distinta del rol de producción. En producción se
+    // rechaza desde testDatabaseUrl antes de crear el pool.
+    const testUrl = testDatabaseUrl();
     globalForDb.__ventaMaxIaSql = createClient(testUrl ?? getEnv().APP_DATABASE_URL, 10);
   }
   return globalForDb.__ventaMaxIaSql;
