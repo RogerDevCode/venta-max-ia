@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart2,
   FlaskConical,
+  House,
   Inbox,
   Kanban,
   LogOut,
@@ -20,6 +21,7 @@ import { signOut } from "@/lib/auth/client";
 import { useEvents } from "@/components/use-events";
 
 const NAV = [
+  { href: "/home", label: "Hoy", icon: House },
   { href: "/inbox", label: "Bandeja", icon: Inbox, badge: true },
   { href: "/orders", label: "Pedidos", icon: ShoppingBag },
   { href: "/pipeline", label: "Pipeline", icon: Kanban },
@@ -89,13 +91,15 @@ export function AppNav({
                 "group flex items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
                 active
                   ? "bg-brand-tint font-semibold text-brand-text"
-                  : "text-text-2 hover:bg-accent hover:text-foreground"
+                  : "text-text-2 hover:bg-accent hover:text-foreground",
               )}
             >
               <item.icon
                 className={cn(
                   "h-[18px] w-[18px] transition-colors",
-                  active ? "text-brand" : "text-text-3 group-hover:text-foreground"
+                  active
+                    ? "text-brand"
+                    : "text-text-3 group-hover:text-foreground",
                 )}
                 strokeWidth={1.7}
               />
@@ -104,7 +108,9 @@ export function AppNav({
                 <span
                   className={cn(
                     "flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold",
-                    active ? "bg-brand text-white" : "bg-border-strong text-text-2"
+                    active
+                      ? "bg-brand text-white"
+                      : "bg-border-strong text-text-2",
                   )}
                 >
                   {unread}
@@ -124,13 +130,15 @@ export function AppNav({
           "group flex items-center gap-[11px] rounded-sm px-2.5 py-2 text-sm font-medium transition-colors",
           pathname.startsWith("/settings")
             ? "bg-brand-tint font-semibold text-brand-text"
-            : "text-text-2 hover:bg-accent hover:text-foreground"
+            : "text-text-2 hover:bg-accent hover:text-foreground",
         )}
       >
         <Settings
           className={cn(
             "h-[18px] w-[18px] transition-colors",
-            pathname.startsWith("/settings") ? "text-brand" : "text-text-3 group-hover:text-foreground"
+            pathname.startsWith("/settings")
+              ? "text-brand"
+              : "text-text-3 group-hover:text-foreground",
           )}
           strokeWidth={1.7}
         />
@@ -142,7 +150,9 @@ export function AppNav({
           {initials(userName)}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-semibold">{userName}</span>
+          <span className="block truncate text-[13px] font-semibold">
+            {userName}
+          </span>
           <span className="block text-[11px] text-text-3">
             {role === "owner" ? "Propietario" : "Equipo"} · En línea
           </span>

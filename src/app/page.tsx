@@ -5,7 +5,7 @@ import { hasAnyOrganization } from "@/server/auth/registration";
 export default async function Home() {
   const session = await getSessionOrNull();
   if (session) {
-    redirect("/inbox");
+    redirect("/home");
   }
   const orgExists = await hasAnyOrganization();
   redirect(orgExists ? "/login" : "/register");
