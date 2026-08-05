@@ -8,6 +8,8 @@ services:
       context: .
       target: app-runtime
     restart: unless-stopped
+    cpus: 0.25
+    mem_limit: 256m
     env_file:
       - .env
     environment:
@@ -62,6 +64,8 @@ services:
   postgres:
     image: pgvector/pgvector:0.8.5-pg18-bookworm
     restart: unless-stopped
+    cpus: 0.75
+    mem_limit: 256m
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER requerido}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requerido}
@@ -86,6 +90,8 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    cpus: 0.10
+    mem_limit: 64m
     ports:
       - "80:80"
       - "443:443"
@@ -114,6 +120,7 @@ services:
   tunnel:
     image: cloudflare/cloudflared:2026.1.2
     container_name: cloudflare_tunnel
+    profiles: ["own-tunnel"]
     restart: unless-stopped
     command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
     depends_on:
