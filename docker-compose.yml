@@ -8,7 +8,7 @@ services:
       context: .
       target: app-runtime
     restart: unless-stopped
-    cpus: 0.25
+    cpus: 0.50
     mem_limit: 256m
     env_file:
       - .env
@@ -64,7 +64,7 @@ services:
   postgres:
     image: pgvector/pgvector:0.8.5-pg18-bookworm
     restart: unless-stopped
-    cpus: 0.75
+    cpus: 1.50
     mem_limit: 256m
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER requerido}
@@ -90,7 +90,7 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
-    cpus: 0.10
+    cpus: 0.20
     mem_limit: 64m
     ports:
       - "80:80"
