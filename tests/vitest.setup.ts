@@ -26,19 +26,26 @@ try {
   // Si no hay .env (CI sin archivo), continuar con valores de fallback
 }
 
-// 2. Reemplazar hostnames Docker ("postgres") por 127.0.0.1 para acceso desde el host
+// 2. Reemplazar hostnames de BD por 127.0.0.1:5432 para garantizar acceso local
 const DB_HOST = "127.0.0.1";
 const DB_PORT = "5432";
 
-function rewriteHost(url: string | undefined): string | undefined {
-  if (!url) return url;
-  return url.replace(/@postgres:/g, `@${DB_HOST}:`).replace(/@postgres\//g, `@${DB_HOST}/`);
+function forceLocalHost(urlStr: string | undefined): string | undefined {
+  if (!urlStr) return urlStr;
+  try {
+    const u = new URL(urlStr);
+    u.hostname = DB_HOST;
+    u.port = DB_PORT;
+    return u.toString();
+  } catch {
+    return urlStr.replace(/@[^/:]+(:\d+)?/g, `@${DB_HOST}:${DB_PORT}`);
+  }
 }
 
 for (const key of ["APP_DATABASE_URL", "AUTH_DATABASE_URL", "INGRESS_DATABASE_URL",
                    "MIGRATOR_DATABASE_URL", "BACKUP_DATABASE_URL", "DATABASE_URL"]) {
-  const rewritten = rewriteHost(process.env[key]);
-  if (rewritten) process.env[key] = rewritten;
+  const forced = forceLocalHost(process.env[key]);
+  if (forced) process.env[key] = forced;
 }
 
 // 3. Garantías mínimas para tests estrictamente unitarios (sin BD real)
