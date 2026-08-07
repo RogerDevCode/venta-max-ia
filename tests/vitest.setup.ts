@@ -11,7 +11,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-// 1. Cargar .env real con ??= (no sobreescribe vars ya presentes en el entorno)
+// 1. Cargar .env real y SOBREESCRIBIR variables de BD (ignorando el entorno heredado)
 try {
   const envPath = path.resolve(process.cwd(), ".env");
   for (const line of readFileSync(envPath, "utf8").split(/\r?\n/)) {
@@ -20,7 +20,12 @@ try {
     const idx = trimmed.indexOf("=");
     const key = trimmed.slice(0, idx).trim();
     const val = trimmed.slice(idx + 1).trim();
-    if (key && !process.env[key]) process.env[key] = val;
+    
+    // Si es una URL de base de datos, siempre sobrescribimos lo que traiga el shell.
+    // Así evitamos heredar conexiones a Neon (cloud) por accidente.
+    if (key && (key.includes("DATABASE_URL") || !process.env[key])) {
+      process.env[key] = val;
+    }
   }
 } catch {
   // Si no hay .env (CI sin archivo), continuar con valores de fallback
@@ -30,21 +35,26 @@ try {
 const DB_HOST = "127.0.0.1";
 const DB_PORT = "5432";
 
-function forceLocalHost(urlStr: string | undefined): string | undefined {
+function forceLocalUrl(urlStr: string | undefined): string | undefined {
   if (!urlStr) return urlStr;
   try {
     const u = new URL(urlStr);
     u.hostname = DB_HOST;
     u.port = DB_PORT;
+    u.searchParams.delete("sslmode");
+    u.searchParams.delete("ssl");
     return u.toString();
   } catch {
-    return urlStr.replace(/@[^/:]+(:\d+)?/g, `@${DB_HOST}:${DB_PORT}`);
+    return urlStr
+      .replace(/@[^/:]+(:\d+)?/g, `@${DB_HOST}:${DB_PORT}`)
+      .replace(/(\?|&)sslmode=[^&]*/g, "")
+      .replace(/(\?|&)ssl=[^&]*/g, "");
   }
 }
 
 for (const key of ["APP_DATABASE_URL", "AUTH_DATABASE_URL", "INGRESS_DATABASE_URL",
                    "MIGRATOR_DATABASE_URL", "BACKUP_DATABASE_URL", "DATABASE_URL"]) {
-  const forced = forceLocalHost(process.env[key]);
+  const forced = forceLocalUrl(process.env[key]);
   if (forced) process.env[key] = forced;
 }
 

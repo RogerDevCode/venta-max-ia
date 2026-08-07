@@ -4,10 +4,7 @@ import postgres from "postgres";
  * Preflight de verificación de integridad del módulo E-Commerce y restricciones PostgreSQL.
  */
 async function main() {
-  let databaseUrl = process.env.DATABASE_URL || "postgresql://postgres:postgres@127.0.0.1:5432/vocero";
-  if (databaseUrl.includes("neon")) {
-    databaseUrl = "postgresql://postgres:postgres@127.0.0.1:5432/vocero";
-  }
+  const databaseUrl = process.env.DATABASE_URL || "postgresql://postgres:postgres@127.0.0.1:5432/vocero";
   const sql = postgres(databaseUrl, { max: 1 });
 
   try {
