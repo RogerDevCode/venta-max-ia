@@ -1,11 +1,11 @@
 # Postgres local para desarrollo. Uso: docker compose -f docker-compose.dev.yml up -d
-# `name` propio: evita colisionar con el proyecto del docker-compose.yml (Ruta B).
-name: vocero-dev
-
+# NOTA: Al compartir el mismo volumen de datos que producción (Ruta B), no habrá ambigüedad de datos.
 services:
   postgres:
     image: pgvector/pgvector:0.8.5-pg18-bookworm
     restart: unless-stopped
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER requerido}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD requerido}
@@ -20,7 +20,7 @@ services:
       # Las pruebas locales usan 127.0.0.1:5432; no exponer PostgreSQL a la LAN.
       - "127.0.0.1:5432:5432"
     volumes:
-      - vocero_dev_pg:/var/lib/postgresql
+      - vocero_pg:/var/lib/postgresql
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
@@ -28,17 +28,19 @@ services:
       timeout: 3s
       retries: 10
     networks:
-      - vocero_dev_net
+      - vocero_net
 
   dev_proxy:
     image: caddy:2-alpine
     container_name: vocero_dev_bot_proxy
     restart: unless-stopped
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
     command: caddy reverse-proxy --from :7080 --to host.docker.internal:3000
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      vocero_dev_net:
+      vocero_net:
         aliases:
           - bot
           - nginx
@@ -52,11 +54,11 @@ services:
     depends_on:
       - dev_proxy
     networks:
-      - vocero_dev_net
+      - vocero_net
 
 volumes:
-  vocero_dev_pg:
+  vocero_pg:
 
 networks:
-  vocero_dev_net:
+  vocero_net:
     driver: bridge

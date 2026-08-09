@@ -138,7 +138,7 @@ export function BrandingClient() {
                 <span className="block text-[15px] font-[650] leading-tight">
                   {name.trim() || "Venta Max IA"}
                 </span>
-                <span className="block text-[11px] text-text-3">CRM · Telegram</span>
+                <span className="block text-xs text-text-3">CRM · Telegram</span>
               </span>
               <span className="flex-1" />
               <span

@@ -18,6 +18,7 @@ export default async function AppLayout({
     session.organizationId,
     session.userId,
     "user",
+    "layout",
     () => getBranding(session.organizationId),
   );
 

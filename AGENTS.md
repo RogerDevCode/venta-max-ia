@@ -107,6 +107,10 @@ Consultar `docs/POSTGRES-SECURITY.md`. Nunca usar `postgres`, migrator, backup o
 - Ante evidencia insuficiente, reconoce el límite; no inventa precio, producto, horario, cobertura ni política.
 - El Laboratorio con `is_test: true` nunca realiza efectos reales en Telegram u otros proveedores.
 
+### UI y accesibilidad
+
+- **Ergonomía visual y tamaño mínimo de fuente:** Pensando en usuarios mayores de 30 y 50+ años (prevención de presbicia y fatiga visual), el tamaño de fuente mínimo permitido en cualquier vista, componente o dispositivo es **13px / 14px** (`text-sm` o `0.8125rem`/`0.875rem`). Queda strictly prohibited usar fuentes micro de `10px` o `11px`. Asimismo, se exige alto contraste de color (mínimo 7:1 en modo oscuro y 4.5:1 en modo claro); se prohíben textos en gris opaco sobre fondos azulados u oscuros.
+
 ## 7. Desarrollo y Docker
 
 ### Runtime local tipo producción
@@ -176,9 +180,10 @@ conteos. `backups/` está fuera de Git; mantener una copia cifrada externa con r
 
 1. Revisar `git status --short`, este contrato, la especificación y el plan relacionados.
 2. Preservar cambios ajenos y reutilizar código, componentes y scripts existentes.
-3. Crear una prueba que falle por la conducta o riesgo solicitado.
-4. Implementar el cambio mínimo sin romper aislamiento ni idempotencia.
-5. Ejecutar pruebas focalizadas y luego las puertas proporcionales completas.
+3. **LEY ESTRICTA DE MIGRACIONES**: Al modificar esquemas o modelos de base de datos, siempre se debe correr el comando correspondiente (ej: `pnpm db:generate` o equivalente) para crear el archivo de migración que actualiza la base de datos de producción. Nunca asumir que el cambio en código actualiza la DB por sí solo.
+4. Crear una prueba que falle por la conducta o riesgo solicitado.
+5. Implementar el cambio mínimo sin romper aislamiento ni idempotencia.
+6. Ejecutar pruebas focalizadas y luego las puertas proporcionales completas.
 6. Para integraciones, probar éxito, firma/secreto, duplicado, timeout, reintento y fallo cerrado.
 7. Actualizar documentos operativos si cambia configuración, esquema o recuperación.
 

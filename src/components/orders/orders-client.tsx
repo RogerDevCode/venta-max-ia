@@ -230,7 +230,7 @@ export function OrdersClient() {
             <Clock className="h-4 w-4" />
           </div>
           <div>
-            <p className="text-[11px] font-medium text-text-3">Pedidos Pendientes</p>
+            <p className="text-xs font-medium text-text-3">Pedidos Pendientes</p>
             <p className="text-base font-bold text-foreground">{pendingCount}</p>
           </div>
         </div>
@@ -240,7 +240,7 @@ export function OrdersClient() {
             <Truck className="h-4 w-4" />
           </div>
           <div>
-            <p className="text-[11px] font-medium text-text-3">En Proceso / Envío</p>
+            <p className="text-xs font-medium text-text-3">En Proceso / Envío</p>
             <p className="text-base font-bold text-foreground">{processingCount}</p>
           </div>
         </div>
@@ -250,7 +250,7 @@ export function OrdersClient() {
             <DollarSign className="h-4 w-4" />
           </div>
           <div>
-            <p className="text-[11px] font-medium text-text-3">Total Ventas Entregadas</p>
+            <p className="text-xs font-medium text-text-3">Total Ventas Entregadas</p>
             <p className="text-base font-bold text-foreground">{formatCurrency(totalSales)}</p>
           </div>
         </div>
@@ -260,7 +260,7 @@ export function OrdersClient() {
             <TrendingUp className="h-4 w-4" />
           </div>
           <div>
-            <p className="text-[11px] font-medium text-text-3">Ticket Promedio</p>
+            <p className="text-xs font-medium text-text-3">Ticket Promedio</p>
             <p className="text-base font-bold text-foreground">{formatCurrency(avgTicket)}</p>
           </div>
         </div>
@@ -297,7 +297,7 @@ export function OrdersClient() {
                     </h3>
                     <span
                       className={cn(
-                        "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold",
+                        "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-bold",
                         col.badgeBg
                       )}
                     >
@@ -327,7 +327,7 @@ export function OrdersClient() {
                                 onClick={() => void togglePaid(order.id, !order.isPaid)}
                                 title="Hacer clic para alternar estado de pago"
                                 className={cn(
-                                  "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors",
+                                  "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-semibold transition-colors",
                                   order.isPaid
                                     ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25"
                                     : "bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/25"
@@ -336,7 +336,7 @@ export function OrdersClient() {
                                 <CreditCard className="h-3 w-3" />
                                 {order.isPaid ? "PAGADO" : "NO PAGADO"}
                               </button>
-                              <span className="flex items-center gap-1 text-[11px] text-text-4">
+                              <span className="flex items-center gap-1 text-xs text-text-4">
                                 <Clock className="h-3 w-3" />
                                 {timeAgo(order.createdAt)}
                               </span>

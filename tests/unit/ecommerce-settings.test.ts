@@ -1,20 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { rows } = vi.hoisted(() => ({ rows: new Map<string, number>() }));
+const { rows } = vi.hoisted(() => ({
+  rows: new Map<string, { maxUnitsPerProduct: number; autoExpirationHours: number }>()
+}));
 
 vi.mock("@/lib/db", () => ({
-  schema: { commerceSettings: { organizationId: "organization_id", maxUnitsPerProduct: "max_units_per_product" } },
+  schema: {
+    commerceSettings: {
+      organizationId: "organization_id",
+      maxUnitsPerProduct: "max_units_per_product",
+      autoExpirationHours: "auto_expiration_hours",
+    }
+  },
   getDb: () => ({
     select: () => ({ from: () => ({ where: (organizationId: string) => ({
       limit: () => {
-        const value = rows.get(organizationId);
-        return Promise.resolve(value === undefined ? [] : [{ maxUnitsPerProduct: value }]);
+        const val = rows.get(organizationId);
+        return Promise.resolve(val === undefined ? [] : [val]);
       },
     }) }) }),
-    insert: () => ({ values: (value: { organizationId: string; maxUnitsPerProduct: number }) => ({
+    insert: () => ({ values: (value: { organizationId: string; maxUnitsPerProduct: number; autoExpirationHours: number }) => ({
       onConflictDoUpdate: () => ({ returning: () => {
-        rows.set(value.organizationId, value.maxUnitsPerProduct);
-        return Promise.resolve([{ maxUnitsPerProduct: value.maxUnitsPerProduct }]);
+        rows.set(value.organizationId, {
+          maxUnitsPerProduct: value.maxUnitsPerProduct,
+          autoExpirationHours: value.autoExpirationHours,
+        });
+        return Promise.resolve([{
+          maxUnitsPerProduct: value.maxUnitsPerProduct,
+          autoExpirationHours: value.autoExpirationHours,
+        }]);
       } }),
     }) }),
   }),
@@ -27,13 +41,22 @@ import { getCommerceSettings, saveCommerceSettings } from "@/server/ecommerce/se
 describe("commerce settings", () => {
   beforeEach(() => rows.clear());
 
-  it("returns 10 when the tenant has no settings", async () => {
-    await expect(getCommerceSettings("org_a")).resolves.toEqual({ maxUnitsPerProduct: 10 });
+  it("returns default values (maxUnits: 10, autoExpirationHours: 36) when tenant has no settings", async () => {
+    await expect(getCommerceSettings("org_a")).resolves.toEqual({
+      maxUnitsPerProduct: 10,
+      autoExpirationHours: 36,
+    });
   });
 
-  it("keeps limits isolated by tenant", async () => {
-    await saveCommerceSettings("org_a", { maxUnitsPerProduct: 3 });
-    await expect(getCommerceSettings("org_a")).resolves.toEqual({ maxUnitsPerProduct: 3 });
-    await expect(getCommerceSettings("org_b")).resolves.toEqual({ maxUnitsPerProduct: 10 });
+  it("keeps limits and auto-expiration isolated by tenant", async () => {
+    await saveCommerceSettings("org_a", { maxUnitsPerProduct: 3, autoExpirationHours: 48 });
+    await expect(getCommerceSettings("org_a")).resolves.toEqual({
+      maxUnitsPerProduct: 3,
+      autoExpirationHours: 48,
+    });
+    await expect(getCommerceSettings("org_b")).resolves.toEqual({
+      maxUnitsPerProduct: 10,
+      autoExpirationHours: 36,
+    });
   });
 });

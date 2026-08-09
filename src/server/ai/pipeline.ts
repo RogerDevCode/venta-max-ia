@@ -1,6 +1,8 @@
 import { asc, desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
+import { runDetached } from "@/lib/db";
+import { withJobTransaction } from "@/lib/db/context";
 import { getEnv, isAiConfigured } from "@/lib/env";
 import { chatJson, type ChatMessage } from "@/lib/ai";
 import { publish } from "@/server/events/bus";
@@ -10,9 +12,11 @@ import { matchesHandoffIntent } from "@/server/ai/handoff";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
 import { buildRagContext } from "@/server/ai/rag/rag-builder";
 import {
+  addProductToCart,
   buscarProductos,
   confirmarPedido,
 } from "@/server/ecommerce/service";
+import { customerProductLabel } from "@/server/ecommerce/quantity";
 import { createPaymentLink } from "@/server/payments/mercadopago";
 import { renderPriceDisclosure } from "@/server/ecommerce/pricing";
 import { parseSlashCommand, processNaturalAddToCart, processPendingProductQuantity, processSlashCommand } from "@/server/ai/commands";
@@ -29,6 +33,7 @@ import { classifyConversationInput, guardReply } from "@/server/ai/conversation-
  */
 
 type CoalesceEntry = {
+  organizationId: string;
   timer: ReturnType<typeof setTimeout> | null;
   running: boolean;
   pending: boolean;
@@ -47,9 +52,10 @@ function coalesceMap(): Map<string, CoalesceEntry> {
 }
 
 /** Punto de entrada con debounce (mensajes entrantes reales). */
-export function scheduleAgentTurn(conversationId: string, immediate = false): void {
+export function scheduleAgentTurn(organizationId: string, conversationId: string, immediate = false): void {
   const map = coalesceMap();
   const entry = map.get(conversationId) ?? {
+    organizationId,
     timer: null,
     running: false,
     pending: false,
@@ -65,27 +71,50 @@ export function scheduleAgentTurn(conversationId: string, immediate = false): vo
     return;
   }
   if (entry.timer) clearTimeout(entry.timer);
-  const delay = immediate ? 0 : getEnv().AGENT_COALESCE_MS;
+  const delay = immediate ? 50 : getEnv().AGENT_COALESCE_MS;
   if (delay === 0) {
     entry.timer = null;
-    void executeTurn(conversationId);
+    runDetached(() => void executeTurn(conversationId));
     return;
   }
   entry.timer = setTimeout(() => {
     entry.timer = null;
-    void executeTurn(conversationId);
+    runDetached(() => void executeTurn(conversationId));
   }, delay);
 }
 
 async function executeTurn(conversationId: string): Promise<void> {
+  console.log(`[debug] executeTurn started for ${conversationId}`);
   const map = coalesceMap();
   const entry = map.get(conversationId);
-  if (!entry || entry.running) return;
+  if (!entry || entry.running) {
+    console.log(`[debug] executeTurn returning early: entry=${!!entry}, running=${entry?.running}`);
+    return;
+  }
   entry.running = true;
   try {
-    await runAgentTurn(conversationId);
+    await withJobTransaction(entry.organizationId, "executeTurn-1", async () => {
+      await runAgentTurn(conversationId);
+    });
   } catch (err) {
     console.error("[agente] turno falló:", err);
+    try {
+      await withJobTransaction(entry.organizationId, "executeTurn-2", async () => {
+        const db = getDb();
+        await db.insert(schema.message).values({
+          id: newId("message"),
+          organizationId: entry.organizationId,
+          conversationId,
+          direction: "out",
+          status: "failed",
+          text: "⚠️ El agente encontró un error interno y no pudo responder.",
+          error: String(err instanceof Error ? err.stack || err.message : err).slice(0, 1000),
+          aiGenerated: true,
+        });
+      });
+    } catch (dbErr) {
+      console.error("[agente] no se pudo registrar el error en la BD:", dbErr);
+    }
   } finally {
     entry.running = false;
     if (entry.pending) {
@@ -93,9 +122,9 @@ async function executeTurn(conversationId: string): Promise<void> {
       entry.pending = false;
       entry.pendingImmediate = false;
       if (nextImmediate) {
-        void executeTurn(conversationId);
+        runDetached(() => void executeTurn(conversationId));
       } else {
-        scheduleAgentTurn(conversationId, false);
+        scheduleAgentTurn(entry.organizationId, conversationId, false);
       }
     } else {
       map.delete(conversationId);
@@ -108,6 +137,7 @@ async function executeTurn(conversationId: string): Promise<void> {
  * Recibe el conversationId, extrae historial, evalúa contexto RAG + FSB y despacha acciones.
  */
 export async function runAgentTurn(conversationId: string): Promise<void> {
+  console.log(`[debug] runAgentTurn started for ${conversationId}`);
   const db = getDb();
 
   const convRows = await db
@@ -117,7 +147,10 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     .limit(1);
 
   const conversation = convRows[0];
-  if (!conversation) return;
+  if (!conversation) {
+    console.log(`[debug] runAgentTurn returning early: no conversation found`);
+    return;
+  }
 
   const { organizationId } = conversation;
 
@@ -128,7 +161,10 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     .limit(1);
 
   const profile = profileRows[0];
-  if (!profile) return;
+  if (!profile) {
+    console.log(`[debug] runAgentTurn returning early: no profile found`);
+    return;
+  }
 
   const history = await db
     .select()
@@ -140,10 +176,16 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   history.reverse();
   const lastInbound = [...history].reverse().find((m) => m.direction === "in");
 
-  if (!lastInbound) return;
+  if (!lastInbound) {
+    console.log(`[debug] runAgentTurn returning early: no lastInbound found`);
+    return;
+  }
+  console.log(`[debug] runAgentTurn passed all early returns! Calling dispatch...`);
 
   const state = (conversation.stateMetadata ?? {}) as Record<string, unknown>;
+  console.log(`[debug] current_state=${state.current_state}`);
   if (lastInbound.text && state.current_state === "cart:awaiting_quantity") {
+    console.log(`[debug] calling processPendingProductQuantity`);
     const navigation = parseSlashCommand(lastInbound.text);
     if (navigation === "nav:home" || navigation === "nav:back") {
       const result = await processSlashCommand({
@@ -159,6 +201,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // Intercepción directa de Comandos Slash (/start, /menu, /reset, /humano)
   if (lastInbound.text) {
     let slashCmd = parseSlashCommand(lastInbound.text);
+    console.log(`[debug] parsed slashCmd: ${slashCmd} for text: ${lastInbound.text}`);
     if (slashCmd) {
       const contextual =
         slashCmd.startsWith("menu:") ||
@@ -179,22 +222,26 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       }
       // /start y /reset se permiten siempre incluso si la conversación estaba en handoff humano
       if (!conversation.handoffAt || slashCmd === "start" || slashCmd === "reset") {
+        console.log(`[debug] calling processSlashCommand for cmd=${slashCmd}`);
         const cmdResult = await processSlashCommand({
           command: slashCmd,
           conversation,
           lastInboundExternalId: lastInbound.externalMessageId,
           profile,
         });
+        console.log(`[debug] processSlashCommand returned`);
         if (cmdResult.handled) return;
       }
     }
   }
 
   if (!conversation.aiEnabled || conversation.handoffAt) {
+    console.log(`[debug] returning because aiEnabled=${conversation.aiEnabled}, handoffAt=${conversation.handoffAt}`);
     return;
   }
 
   if (lastInbound.text) {
+    console.log(`[debug] checking guardrails for text: ${lastInbound.text}`);
     const guard = classifyConversationInput(lastInbound.text);
     const previousStrikes = Number(state.guard_offensive_strikes) || 0;
     if (guard) {
@@ -368,12 +415,81 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
         organizationId,
         query: action.query,
       });
+      if (productos.length > 0 && productos[0]) {
+        const currentState = (conversation.stateMetadata as Record<string, unknown>) ?? {};
+        await db.update(schema.conversation).set({
+          stateMetadata: {
+            ...currentState,
+            selectedProductId: productos[0].id,
+            last_searched_product_ids: productos.map((p) => p.id),
+          },
+          updatedAt: new Date(),
+        }).where(eq(schema.conversation.id, conversationId));
+      }
       const resText = productos.length > 0
         ? `📦 Productos encontrados:\n${productos
           .map((p) => `${[p.name, p.description].filter(Boolean).join(" — ")} — $${p.price.toLocaleString("es-CL")} CLP (Stock: ${p.stock})`)
           .join("\n")}`
         : `No encontré productos con "${action.query}" en el catálogo actual. Puedo mostrarte las categorías disponibles.`;
       await deliverReply(conversation, resText);
+      return;
+    }
+    case "agregar_producto": {
+      let productId = action.productId;
+      const qty = action.cantidad || 1;
+      const state = (conversation.stateMetadata as Record<string, unknown>) ?? {};
+
+      if (!productId && action.query) {
+        const productos = await buscarProductos({ organizationId, query: action.query });
+        if (productos.length > 0 && productos[0]) {
+          productId = productos[0].id;
+        }
+      }
+      if (!productId) {
+        if (typeof state.selectedProductId === "string") {
+          productId = state.selectedProductId;
+        } else if (Array.isArray(state.last_searched_product_ids) && typeof state.last_searched_product_ids[0] === "string") {
+          productId = state.last_searched_product_ids[0];
+        }
+      }
+      if (productId) {
+        const result = await addProductToCart({
+          organizationId,
+          conversationId,
+          productId,
+          quantity: qty,
+        });
+        if (result.ok) {
+          await deliverReply(
+            conversation,
+            action.reply ||
+              `✅ Agregamos ${customerProductLabel(result.product)}, cantidad ${qty}, a tu carrito.\n\n🛒 Carrito: ${result.units} productos · Total: $${result.totalAmount.toLocaleString("es-CL")} CLP\n\n¿Deseas agregar algo más o confirmamos la compra?`
+          );
+          return;
+        }
+      }
+      await deliverReply(
+        conversation,
+        action.reply || "No pudimos agregar el producto al carrito. Por favor indícame el nombre exacto del producto."
+      );
+      return;
+    }
+    case "mostrar_pedido": {
+      await processSlashCommand({
+        command: "menu:carrito",
+        conversation,
+        lastInboundExternalId: lastInbound?.externalMessageId,
+        profile,
+      });
+      return;
+    }
+    case "cancelar_pedido": {
+      await processSlashCommand({
+        command: "order:cancel:active",
+        conversation,
+        lastInboundExternalId: lastInbound?.externalMessageId,
+        profile,
+      });
       return;
     }
     case "mostrar_catalogo": {

@@ -21,7 +21,7 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   const updated = await updateConversation(session.organizationId, id, body.data);
   if (!updated) return apiError(404, "not_found", "Conversación no encontrada");
 
-  const row = await getConversation(session.organizationId, id);
+  const row = await getConversation(session, id);
   if (row) {
     const dto = serializeConversation(row.conversation, row.contact);
     publish(session.organizationId, {

@@ -74,7 +74,7 @@ export function AppNav({
           <span className="block truncate text-[16px] font-[650] leading-tight tracking-tight">
             {branding.name}
           </span>
-          <span className="block text-[11px] text-text-3">CRM · Telegram</span>
+          <span className="block text-xs text-text-3">CRM · Telegram</span>
         </span>
       </div>
 
@@ -153,7 +153,7 @@ export function AppNav({
           <span className="block truncate text-[13px] font-semibold">
             {userName}
           </span>
-          <span className="block text-[11px] text-text-3">
+          <span className="block text-xs text-text-3">
             {role === "owner" ? "Propietario" : "Equipo"} · En línea
           </span>
         </span>

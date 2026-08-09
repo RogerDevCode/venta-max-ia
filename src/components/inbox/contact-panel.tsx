@@ -192,7 +192,7 @@ export function ContactPanel({
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[13px] font-medium">IA en esta conversación</p>
-                <p className="text-[11px] text-text-3">
+                <p className="text-xs text-text-3">
                   {!agentReady
                     ? "Agente sin activar"
                     : conversation.handoffAt

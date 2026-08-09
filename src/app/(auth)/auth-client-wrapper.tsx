@@ -95,7 +95,7 @@ export function AuthClientWrapper({
                 )}
               >
                 {branding.name}
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-500 ring-1 ring-amber-500/30">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-500 ring-1 ring-amber-500/30">
                   CL
                 </span>
               </h1>

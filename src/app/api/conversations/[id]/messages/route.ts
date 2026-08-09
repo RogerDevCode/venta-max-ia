@@ -10,7 +10,7 @@ type Params = { params: Promise<{ id: string }> };
 
 export const GET = withAuth(async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
-  const row = await getConversation(session.organizationId, id);
+  const row = await getConversation(session, id);
   if (!row) return apiError(404, "not_found", "Conversación no encontrada");
 
   const url = new URL(req.url);
@@ -56,7 +56,7 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
 
 export const DELETE = withAuth(async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
-  const row = await getConversation(session.organizationId, id);
+  const row = await getConversation(session, id);
   if (!row) return apiError(404, "not_found", "Conversación no encontrada");
 
   const { clearConversationMessages } = await import("@/server/inbox/queries");
@@ -64,7 +64,7 @@ export const DELETE = withAuth(async (session, req: Request, ctx: Params) => {
 
   const result = await clearConversationMessages(session.organizationId, id);
 
-  const freshRow = await getConversation(session.organizationId, id);
+  const freshRow = await getConversation(session, id);
   if (freshRow) {
     const { serializeConversation } = await import("@/server/inbox/queries");
     const dto = serializeConversation(freshRow.conversation, freshRow.contact);

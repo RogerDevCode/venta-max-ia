@@ -10,11 +10,12 @@ export const dynamic = "force-dynamic";
 /** GET público: el login necesita la marca antes de autenticarse. */
 export async function GET() {
   const session = await getSessionOrNull();
-  const branding = session
+  const branding = session?.organizationId
     ? await withTenantTransaction(
         session.organizationId,
         session.userId,
         "user",
+        "branding-route",
         () => getBranding(session.organizationId),
       )
     : DEFAULT_BRANDING;

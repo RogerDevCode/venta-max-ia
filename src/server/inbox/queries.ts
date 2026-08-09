@@ -17,10 +17,13 @@ export type ConversationDto = {
   preview: string | null;
 };
 
+import { type SessionContext } from "@/lib/auth/session";
+
 export async function listConversations(
-  organizationId: string,
+  session: SessionContext,
   since?: Date
 ): Promise<ConversationDto[]> {
+  const organizationId = session.organizationId;
   const db = getDb();
   const previewSql = sql<string | null>`(
     select coalesce(m.text, m.type)
@@ -53,7 +56,8 @@ export async function listConversations(
         schema.conversation.organizationId,
         organizationId,
         eq(schema.conversation.isTest, false),
-        since ? gt(schema.conversation.updatedAt, since) : undefined
+        since ? gt(schema.conversation.updatedAt, since) : undefined,
+        (session.role === "seller" || session.role === "member") ? eq(schema.conversation.assignedUserId, session.userId) : undefined
       )
     )
     .orderBy(desc(sql`coalesce(${schema.conversation.lastMessageAt}, ${schema.conversation.createdAt})`));
@@ -64,9 +68,10 @@ export async function listConversations(
 }
 
 export async function getConversation(
-  organizationId: string,
+  session: SessionContext,
   conversationId: string
 ) {
+  const organizationId = session.organizationId;
   const db = getDb();
   const rows = await db
     .select({ conversation: schema.conversation, contact: schema.contact })
@@ -79,7 +84,8 @@ export async function getConversation(
       scoped(
         schema.conversation.organizationId,
         organizationId,
-        eq(schema.conversation.id, conversationId)
+        eq(schema.conversation.id, conversationId),
+        (session.role === "seller" || session.role === "member") ? eq(schema.conversation.assignedUserId, session.userId) : undefined
       )
     )
     .limit(1);

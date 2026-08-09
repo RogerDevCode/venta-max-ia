@@ -73,7 +73,7 @@ export function Composer({
       </div>
       <div className="mt-1.5 flex items-center justify-between">
         {error ? <p className="text-xs text-destructive">{error}</p> : <span />}
-        <p className="text-[11px] text-text-3">Telegram</p>
+        <p className="text-xs text-text-3">Telegram</p>
       </div>
     </div>
   );

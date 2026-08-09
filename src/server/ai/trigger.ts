@@ -6,8 +6,9 @@ import { scheduleAgentTurn } from "@/server/ai/pipeline";
  * directamente, sin debounce).
  */
 export async function maybeRunAgentTurn(
+  organizationId: string,
   conversationId: string,
   immediate = false
 ): Promise<void> {
-  scheduleAgentTurn(conversationId, immediate);
+  scheduleAgentTurn(organizationId, conversationId, immediate);
 }

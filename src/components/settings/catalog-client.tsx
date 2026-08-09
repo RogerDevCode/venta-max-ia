@@ -21,6 +21,7 @@ export function CatalogClient() {
   const [categoryMessage, setCategoryMessage] = useState<string | null>(null);
   const [productMessage, setProductMessage] = useState<string | null>(null);
   const [maxUnitsPerProduct, setMaxUnitsPerProduct] = useState("10");
+  const [autoExpirationHours, setAutoExpirationHours] = useState("36");
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
 
   // Categorías
@@ -60,8 +61,9 @@ export function CatalogClient() {
       setProducts(data.products);
     }
     if (settingsRes.ok) {
-      const data = (await settingsRes.json()) as { settings: { maxUnitsPerProduct: number } };
+      const data = (await settingsRes.json()) as { settings: { maxUnitsPerProduct: number; autoExpirationHours?: number } };
       setMaxUnitsPerProduct(String(data.settings.maxUnitsPerProduct));
+      setAutoExpirationHours(String(data.settings.autoExpirationHours ?? 36));
     }
   }, []);
 
@@ -72,20 +74,25 @@ export function CatalogClient() {
   async function saveCommerceLimit() {
     setSettingsMessage(null);
     const value = Number(maxUnitsPerProduct);
+    const expValue = Number(autoExpirationHours);
     if (!Number.isInteger(value) || value < 1 || value > 1000) {
-      setSettingsMessage("⚠️ El máximo debe ser un entero entre 1 y 1000.");
+      setSettingsMessage("⚠️ Las unidades máximas deben ser un entero entre 1 y 1000.");
+      return;
+    }
+    if (!Number.isInteger(expValue) || expValue < 1 || expValue > 720) {
+      setSettingsMessage("⚠️ La expiraciones automática debe ser un número entre 1 y 720 horas (máx 30 días).");
       return;
     }
     const res = await fetch("/api/catalog/settings", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ maxUnitsPerProduct: value }),
+      body: JSON.stringify({ maxUnitsPerProduct: value, autoExpirationHours: expValue }),
     });
     if (!res.ok) {
       setSettingsMessage(`⚠️ ${await errorMessage(res)}`);
       return;
     }
-    setSettingsMessage("✅ Límite actualizado.");
+    setSettingsMessage("✅ Configuración comercial actualizada.");
   }
 
   // Acciones de categoría
@@ -355,15 +362,15 @@ export function CatalogClient() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Límite de compra</CardTitle>
+          <CardTitle>Configuración Comercial</CardTitle>
           <CardDescription>
-            Máximo por producto y carrito. El carrito no reserva inventario; el stock se confirma al formalizar el pedido.
+            Parámetros de límites de compra y auto-expiración de pedidos sin confirmación.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-56 space-y-1.5">
-              <Label htmlFor="max-units-per-product">Unidades máximas</Label>
+              <Label htmlFor="max-units-per-product">Unidades máximas por producto</Label>
               <Input
                 id="max-units-per-product"
                 type="number"
@@ -374,9 +381,24 @@ export function CatalogClient() {
                 onChange={(event) => setMaxUnitsPerProduct(event.target.value)}
               />
             </div>
-            <Button type="button" onClick={() => void saveCommerceLimit()}>Guardar límite</Button>
+            <div className="w-56 space-y-1.5">
+              <Label htmlFor="auto-expiration-hours">Auto-expiración (horas)</Label>
+              <Input
+                id="auto-expiration-hours"
+                type="number"
+                min="1"
+                max="720"
+                step="1"
+                value={autoExpirationHours}
+                onChange={(event) => setAutoExpirationHours(event.target.value)}
+              />
+            </div>
+            <Button type="button" onClick={() => void saveCommerceLimit()}>Guardar configuración</Button>
           </div>
-          {settingsMessage && <p role="status" className="text-sm">{settingsMessage}</p>}
+          <p className="text-xs text-muted-foreground">
+            Los pedidos activos superando el tiempo de auto-expiración (ej. 36 hrs / 1.5 días) pasan automáticamente a cancelados (`auto_expiration`), liberando stock y notificando al cliente amablemente por Telegram.
+          </p>
+          {settingsMessage && <p role="status" className="text-sm font-medium">{settingsMessage}</p>}
         </CardContent>
       </Card>
 
@@ -474,7 +496,7 @@ export function CatalogClient() {
                     <div className="flex items-center gap-2">
                       <strong className="text-sm font-medium capitalize">{c.name}</strong>
                       {c.isGeneral && (
-                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground uppercase">
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-semibold text-muted-foreground uppercase">
                           Respaldo
                         </span>
                       )}
@@ -638,7 +660,7 @@ export function CatalogClient() {
                   title="Monto exacto en pesos chilenos (CLP) enteros, sin puntos ni decimales."
                 />
               </div>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Equivale a: <strong className="text-foreground">${Number(product.price || 0).toLocaleString("es-CL")} CLP</strong>
               </p>
             </div>

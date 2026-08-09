@@ -256,7 +256,7 @@ function HistoryList({
               </span>
             )}
           </div>
-          <p className="mt-1 text-[11px] text-muted-foreground">
+          <p className="mt-1 text-xs text-muted-foreground">
             {new Date(run.startedAt).toLocaleString("es-MX", {
               day: "numeric",
               month: "short",

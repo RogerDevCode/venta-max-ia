@@ -81,6 +81,15 @@ export function getDatabaseContext(): DatabaseContext | undefined {
   return databaseContext.getStore();
 }
 
+/**
+ * Ejecuta una función sin contexto de transacción heredado.
+ * Útil para promesas en background (fire-and-forget) que no deben usar
+ * una conexión/transacción que el padre va a cerrar en breve.
+ */
+export function runDetached<T>(callback: () => T): T {
+  return databaseContext.run(undefined as unknown as DatabaseContext, callback);
+}
+
 let cachedAuthDb: ReturnType<typeof drizzle<typeof schema>> | null = null;
 export function getAuthDb() {
   if (!cachedAuthDb) cachedAuthDb = drizzle(getAuthSql(), { schema });

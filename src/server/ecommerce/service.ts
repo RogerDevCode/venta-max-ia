@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -12,6 +12,7 @@ import { getCommerceSettings } from "@/server/ecommerce/settings";
 import { aggregateAndValidateShape, CartShapeError, normalizeCartItems, type CartPriceBucket } from "@/server/ecommerce/cart-normalizer";
 import { allocateOrderNumber } from "@/server/ecommerce/order-number";
 import { type PriceChange } from "@/server/ecommerce/pricing";
+import { enqueueTelegramOutbox } from "@/server/telegram/outbox";
 
 export interface CartItem {
   productId: string;
@@ -651,6 +652,145 @@ export async function cancelActiveOrder(input: {
     if (error instanceof InvalidCartError) return { ok: false as const, error: "invalid_order" as const };
     throw error;
   }
+}
+
+export async function processAutoExpiredOrders(organizationId: string): Promise<string[]> {
+  const settings = await getCommerceSettings(organizationId);
+  const autoExpirationHours = settings.autoExpirationHours;
+  const cutoff = new Date(Date.now() - autoExpirationHours * 60 * 60 * 1000);
+
+  const expiredOrders = await getDb()
+    .select({
+      id: schema.order.id,
+      orderNumber: schema.order.orderNumber,
+      contactId: schema.order.contactId,
+      conversationId: schema.order.conversationId,
+      items: schema.order.items,
+      createdAt: schema.order.createdAt,
+    })
+    .from(schema.order)
+    .where(
+      scoped(
+        schema.order.organizationId,
+        organizationId,
+        and(
+          inArray(schema.order.status, ACTIVE_ORDER_STATUSES),
+          lt(schema.order.createdAt, cutoff)
+        )
+      )
+    );
+
+  if (expiredOrders.length === 0) return [];
+
+  const cancelledOrderIds: string[] = [];
+
+  for (const expOrder of expiredOrders) {
+    const db = getDb();
+    const result = await db.transaction(async (tx) => {
+      const updated = await tx
+        .update(schema.order)
+        .set({
+          status: "cancelled",
+          cancellationReason: "auto_expiration",
+          updatedAt: new Date(),
+        })
+        .where(
+          scoped(
+            schema.order.organizationId,
+            organizationId,
+            and(
+              eq(schema.order.id, expOrder.id),
+              inArray(schema.order.status, ACTIVE_ORDER_STATUSES)
+            )
+          )
+        )
+        .returning({ id: schema.order.id });
+
+      if (!updated[0]) return false;
+
+      await restoreOrderStock(tx, organizationId, expOrder.items as CartItem[]);
+
+      const contactRows = await tx
+        .select({
+          id: schema.contact.id,
+          channel: schema.contact.channel,
+          externalAddress: schema.contact.externalAddress,
+          name: schema.contact.name,
+        })
+        .from(schema.contact)
+        .where(
+          scoped(
+            schema.contact.organizationId,
+            organizationId,
+            eq(schema.contact.id, expOrder.contactId)
+          )
+        )
+        .limit(1);
+
+      const contact = contactRows[0];
+      if (contact && (contact.channel === "telegram" || contact.channel === "test")) {
+        const integrationRows = await tx.select({ id: schema.telegramIntegration.id })
+          .from(schema.telegramIntegration)
+          .where(scoped(schema.telegramIntegration.organizationId, organizationId))
+          .limit(1);
+
+        let integrationId = integrationRows[0]?.id;
+        if (!integrationId) {
+          integrationId = newId("telegramIntegration");
+          await tx.insert(schema.telegramIntegration).values({
+            id: integrationId,
+            organizationId,
+            webhookTokenHash: "auto_expire_placeholder_hash",
+            status: "pending",
+          }).onConflictDoNothing();
+        }
+
+        const contactName = contact.name || "estimado/a cliente";
+        const messageText = `Hola ${contactName} 🙏 Te pedimos disculpas. Tu pedido #${expOrder.orderNumber} ha sido cancelado automáticamente al haber transcurrido ${autoExpirationHours} horas sin confirmación final. Si deseas retomar tu compra o tienes cualquier duda, con gusto te atenderemos. ¡Gracias por tu comprensión!`;
+
+        let fsmRevision = 1;
+        if (expOrder.conversationId) {
+          const convRows = await tx.select({ fsmRevision: schema.conversation.fsmRevision })
+            .from(schema.conversation)
+            .where(eq(schema.conversation.id, expOrder.conversationId))
+            .limit(1);
+          if (convRows[0]?.fsmRevision != null) {
+            fsmRevision = convRows[0].fsmRevision;
+          }
+        }
+
+        const seqRows = expOrder.conversationId
+          ? await tx.select({ value: sql<number>`coalesce(max(${schema.telegramOutbox.sequence}),0)+1` })
+              .from(schema.telegramOutbox).where(eq(schema.telegramOutbox.conversationId, expOrder.conversationId))
+          : [{ value: 1 }];
+        const sequence = Number(seqRows[0]?.value ?? 1);
+
+        await enqueueTelegramOutbox(tx, {
+          organizationId,
+          integrationId,
+          conversationId: expOrder.conversationId ?? contact.id,
+          idempotencyKey: `auto-expire-${expOrder.id}`,
+          kind: "message",
+          sequence,
+          fsmRevision,
+          text: messageText,
+          payload: { method: "sendMessage", chatId: contact.externalAddress, text: messageText },
+        });
+      }
+
+      return true;
+    });
+
+    if (result) {
+      cancelledOrderIds.push(expOrder.id);
+    }
+  }
+
+  if (cancelledOrderIds.length > 0) {
+    invalidateCatalogCache(organizationId);
+  }
+
+  return cancelledOrderIds;
 }
 
 class InvalidCartError extends Error {}

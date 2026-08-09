@@ -50,6 +50,7 @@ USER ventamaxia
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+ENV NODE_OPTIONS="--dns-result-order=ipv4first"
 
 # start-period amplio: cubre las migraciones del arranque
 HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \

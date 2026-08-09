@@ -44,6 +44,7 @@ export type SlashCommandType =
   | `catalog:number:${string}`
   | "cart:checkout"
   | "cart:clear"
+  | "order:cancel:active"
   | `order:detail:${string}`
   | `order:refresh:${string}`
   | `order:edit:${string}`
@@ -84,15 +85,20 @@ export function parseNaturalAddToCart(text?: string | null): NaturalAddToCartReq
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[¿?¡!.,]/g, "")
     .replace(/\s+/g, " ");
-  const match = clean.match(/^(?:agrega|anade|pon|ponme|dame|llevo)\s+(?:(\d+|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+)?(?:de\s+)?(.+?)(?:\s+(?:al|a mi) carrito)?$/);
+
+  if (clean.includes("y confirmar") || clean.includes("confirmar") || clean.length > 80) {
+    return null;
+  }
+
+  const match = clean.match(/^(?:agrega|anade|anade|pon|ponme|dame|llevo|me llevo|quiero|deseo|comprar|compra|sumar|suma|pedir|pido|necesito|me das)?\s*(?:(\d+|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+)?(?:de\s+)?(.+?)(?:\s+(?:al|a mi) carrito)?$/);
   if (!match?.[2]) return null;
   const quantityToken = match[1];
   const quantityCandidate = quantityToken
     ? (/^\d+$/.test(quantityToken) ? Number(quantityToken) : SPANISH_QUANTITIES[quantityToken])
     : 1;
-  const quantity = quantityCandidate ?? 0;
+  const quantity = quantityCandidate ?? 1;
   const query = match[2].trim();
-  if (!Number.isSafeInteger(quantity) || quantity < 1 || query.length < 2) return null;
+  if (!Number.isSafeInteger(quantity) || quantity < 1 || query.length < 1) return null;
   return { quantity, query };
 }
 
@@ -116,11 +122,21 @@ export function parseSlashCommand(text?: string | null): SlashCommandType | null
   if (clean === "i" || clean === "I" || clean === "catalog:home") return "nav:home";
   if (clean.toLowerCase() === "confirmar") return "cart:checkout";
   const natural = clean.toLocaleLowerCase("es-CL").replace(/[¿?¡!.,]/g, "").trim();
-  if (/^(ver |mostrar )?(mi )?carrito$/.test(natural)) return "menu:carrito";
-  if (/^(ver |mostrar )?(mis )?pedidos$/.test(natural)) return "menu:pedidos";
+  if (/^(ver|mostrar|revisar|consultar|mi)?\s*(el|mi)?\s*(carro|carrito|carrito de compras)$/.test(natural) ||
+      /^(que tengo en (el|mi) (carro|carrito)|ver mi carro|ver el carro|ver carro|mostrar carro|mostrar mi carro)$/.test(natural)) {
+    return "menu:carrito";
+  }
+  if (/^(ver|mostrar|revisar|consultar)?\s*(el|mi|mis)?\s*(pedido|pedidos|orden|compras)$/.test(natural) ||
+      /^(estado de (mi|el) pedido|que pedi|ver mi pedido|ver el pedido|ver pedido|mostrar pedido|mostrar mi pedido)$/.test(natural)) {
+    return "menu:pedidos";
+  }
+  if (/^(cancelar|anular|eliminar|borrar)\s*(el|mi|mis)?\s*(pedido|pedidos|orden|compra)$/.test(natural) ||
+      /^(quiero|deseo|cancela|anula)\s*(cancelar|anular)?\s*(mi|el)?\s*(pedido|orden)$/.test(natural) ||
+      natural === "cancelar mi pedido" || natural === "anular mi pedido" || natural === "cancelar pedido" || natural === "anular pedido") {
+    return "order:cancel:active";
+  }
   if (/^(confirmar|confirmar compra|confirmar pedido|quiero confirmar)$/.test(natural)) return "cart:checkout";
   if (/^(vaciar|limpiar|borrar) (mi )?carrito$/.test(natural)) return "cart:clear";
-  if (/^(cancelar|anular) (mi )?pedido$/.test(natural)) return "menu:pedidos";
 
   // 2. Manejo de Comandos Slash clásicos (/start, /menu, /reset, /humano)
   if (clean.startsWith("/")) {
@@ -468,6 +484,28 @@ export async function processSlashCommand(input: {
     return processSlashCommand({ ...input, command: "cart:checkout", navigationStack: stack });
   }
 
+  if (command === "order:cancel:active") {
+    const activeOrders = await listActiveOrders({ organizationId, contactId: conversation.contactId });
+    if (activeOrders.length > 0) {
+      const result = await cancelActiveOrder({ organizationId, conversationId, orderId: activeOrders[0]!.id });
+      await deliverCommandReply(
+        conversation,
+        result.ok
+          ? `✅ El pedido N° ${result.order.orderNumber} fue cancelado y sus unidades volvieron al stock.`
+          : "Este pedido ya no está activo o no puede cancelarse.",
+        { channel }
+      );
+      return processSlashCommand({
+        ...input,
+        command: "menu:pedidos",
+        navigationStack: ["menu:main"],
+      });
+    }
+    await clearActiveCart({ organizationId, conversationId });
+    await deliverCommandReply(conversation, "🗑️ No tenías un pedido formal activo, pero vaciamos tu carrito de compras.", { channel });
+    return processSlashCommand({ ...input, command: "menu:carrito" });
+  }
+
   const orderCommand = command.match(/^order:(detail|refresh|edit|cancel):(.+)$/);
   if (orderCommand) {
     const action = orderCommand[1];
@@ -591,6 +629,7 @@ export async function processSlashCommand(input: {
   switch (command) {
     case "start":
     case "reset": {
+      console.log(`[debug] processSlashCommand: case start - updating conversation`);
       await db
         .update(schema.conversation)
         .set({
@@ -613,11 +652,13 @@ export async function processSlashCommand(input: {
             eq(schema.conversation.id, conversationId)
           )
         );
+      console.log(`[debug] processSlashCommand: case start - conversation updated`);
 
       publish(organizationId, {
         type: "conversation.updated",
         data: { conversation: { id: conversationId } },
       });
+      console.log(`[debug] processSlashCommand: case start - fetching profile`);
 
       const profile = input.profile !== undefined
         ? input.profile
@@ -626,6 +667,7 @@ export async function processSlashCommand(input: {
             .from(schema.agentProfile)
             .where(scoped(schema.agentProfile.organizationId, organizationId))
             .limit(1))[0];
+      console.log(`[debug] processSlashCommand: case start - profile fetched`);
 
       const welcomeText = profile?.greeting?.trim()
         ? profile.greeting.trim()
@@ -634,11 +676,13 @@ export async function processSlashCommand(input: {
           `Puedes escribirme lo que buscas o elegir una opción del menú.`;
 
       const isTelegram = true;
+      console.log(`[debug] processSlashCommand: calling deliverCommandReply for /start`);
       if (isTelegram) {
         await deliverCommandReply(conversation, welcomeText, { replyMarkup: buildMainMenuMarkup(), channel });
       } else {
         await deliverCommandReply(conversation, welcomeText, { channel });
       }
+      console.log(`[debug] processSlashCommand: deliverCommandReply completed!`);
       return { handled: true };
     }
 
@@ -880,11 +924,34 @@ export async function processNaturalAddToCart(input: {
   if (!request) return false;
 
   const { conversation } = input;
-  const products = await buscarProductos({
+  const state = (conversation.stateMetadata ?? {}) as Record<string, unknown>;
+
+  let products = (await buscarProductos({
     organizationId: conversation.organizationId,
     query: request.query,
-  });
-  if (products.length === 0) {
+  })) || [];
+
+  const genericTokens = ["botella", "botellas", "unidad", "unidades", "producto", "este", "esta", "ese", "esa", "uno", "una", "gato"];
+  if (
+    Array.isArray(products) &&
+    products.length !== 1 &&
+    genericTokens.some((tok) => request.query.toLowerCase().includes(tok))
+  ) {
+    const fallbackId =
+      typeof state.selectedProductId === "string"
+        ? state.selectedProductId
+        : Array.isArray(state.last_searched_product_ids) &&
+          typeof state.last_searched_product_ids[0] === "string"
+        ? state.last_searched_product_ids[0]
+        : null;
+
+    if (fallbackId) {
+      const p = await getProductForCustomer(conversation.organizationId, fallbackId);
+      if (p) products = [p];
+    }
+  }
+
+  if (!products || products.length === 0) {
     await deliverCommandReply(
       conversation,
       `No encontré “${request.query}” en el catálogo. Puedes revisar las categorías o escribir el nombre de otra presentación.`,
@@ -911,7 +978,7 @@ export async function processNaturalAddToCart(input: {
     productId: product.id,
     quantity: request.quantity,
   });
-  if (!result.ok) {
+  if (result && !result.ok) {
     const message = result.error === "tenant_limit_exceeded"
       ? `Puedes agregar como máximo ${result.limit} unidades de este producto.`
       : result.error === "insufficient_stock"
@@ -921,16 +988,18 @@ export async function processNaturalAddToCart(input: {
     return true;
   }
 
-  await deliverCommandReply(
-    conversation,
-    `✅ Agregamos ${customerProductLabel(result.product)}, cantidad ${request.quantity}, a tu carrito.\n\n🛒 Carrito: ${result.units} productos · Total: $${result.totalAmount.toLocaleString("es-CL")} CLP`,
-    { channel: "telegram" }
-  );
-  await processSlashCommand({
-    command: "menu:carrito",
-    conversation,
-    lastInboundExternalId: input.lastInboundExternalId,
-  });
+  if (result?.ok && result?.product) {
+    await deliverCommandReply(
+      conversation,
+      `✅ Agregamos ${customerProductLabel(result.product)}, cantidad ${request.quantity}, a tu carrito.\n\n🛒 Carrito: ${result.units} productos · Total: $${result.totalAmount.toLocaleString("es-CL")} CLP`,
+      { channel: "telegram" }
+    );
+    await processSlashCommand({
+      command: "menu:carrito",
+      conversation,
+      lastInboundExternalId: input.lastInboundExternalId,
+    });
+  }
   return true;
 }
 
@@ -939,6 +1008,7 @@ async function deliverCommandReply(
   text: string,
   opts?: { replyMarkup?: unknown; channel?: "telegram" }
 ): Promise<void> {
+  console.log(`[debug] deliverCommandReply started for ${conversation.id}. isTest=${conversation.isTest}`);
   if (conversation.isTest) {
     const db = getDb();
     await db.insert(schema.message).values({
@@ -954,6 +1024,7 @@ async function deliverCommandReply(
     return;
   }
 
+  console.log(`[debug] deliverCommandReply: about to call sendText...`);
   await sendText({
     conversationId: conversation.id,
     organizationId: conversation.organizationId,
@@ -963,4 +1034,5 @@ async function deliverCommandReply(
     channel: opts?.channel,
     row: { conversation },
   });
+  console.log(`[debug] deliverCommandReply: sendText finished!`);
 }

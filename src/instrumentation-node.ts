@@ -6,8 +6,19 @@ import { startTelegramReliabilityWorker } from "@/server/telegram/worker";
 
 try {
   dns.setDefaultResultOrder("ipv4first");
+  const origLookup = dns.lookup;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  dns.lookup = ((domain: any, options: any, callback: any) => {
+    if (typeof options === "object" && options !== null) {
+      if (!options.family) options.family = 4;
+    } else if (typeof options === "function") {
+      callback = options;
+      options = { family: 4 };
+    }
+    return origLookup(domain, options, callback);
+  }) as typeof dns.lookup;
 } catch {
-  // Ignorar si el entorno no soporta setDefaultResultOrder
+  // Ignorar si falla
 }
 
 /**
@@ -20,7 +31,7 @@ export async function cleanupOrphanRuns(): Promise<void> {
     const updated = (
       await Promise.all(
         organizations.map(({ id }) =>
-          withJobTransaction(id, () =>
+          withJobTransaction(id, "cleanup-orphan", () =>
             getDb()
               .update(schema.agentTestRun)
               .set({

@@ -117,6 +117,7 @@ export const contact = pgTable(
     channel: text("channel", { enum: ["telegram", "whatsapp", "test", "retired_whatsapp"] }).notNull(),
     externalAddress: text("external_address").notNull(),
     name: text("name").notNull(),
+    assignedUserId: text("assigned_user_id").references(() => user.id, { onDelete: "set null" }),
     notes: text("notes"),
     archivedAt: timestamp("archived_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -159,6 +160,7 @@ export const lead = pgTable(
     stageId: text("stage_id")
       .notNull()
       .references(() => pipelineStage.id),
+    assignedUserId: text("assigned_user_id").references(() => user.id, { onDelete: "set null" }),
     position: integer("position").notNull().default(0),
     lastActivityAt: timestamp("last_activity_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -183,6 +185,7 @@ export const conversation = pgTable(
     /** Conversación del Laboratorio: jamás toca la API de Telegram. */
     isTest: boolean("is_test").notNull().default(false),
     aiEnabled: boolean("ai_enabled").notNull().default(true),
+    assignedUserId: text("assigned_user_id").references(() => user.id, { onDelete: "set null" }),
     handoffAt: timestamp("handoff_at"),
     handoffReason: text("handoff_reason", {
       enum: ["cliente", "modelo", "error", "ventana"],
@@ -585,12 +588,14 @@ export const commerceSettings = pgTable(
       .primaryKey()
       .references(() => organization.id, { onDelete: "cascade" }),
     maxUnitsPerProduct: integer("max_units_per_product").notNull().default(10),
+    autoExpirationHours: integer("auto_expiration_hours").notNull().default(36),
     mercadopagoAccessToken: text("mercadopago_access_token"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
     check("commerce_settings_max_units_positive", sql`${t.maxUnitsPerProduct} > 0`),
+    check("commerce_settings_auto_expiration_positive", sql`${t.autoExpirationHours} > 0`),
   ]
 );
 
@@ -667,6 +672,7 @@ export const order = pgTable(
     })
       .notNull()
       .default("pending"),
+    cancellationReason: text("cancellation_reason"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

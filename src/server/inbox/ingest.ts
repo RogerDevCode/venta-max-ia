@@ -146,7 +146,7 @@ export async function ingestTelegramMessage(input: {
     data: { conversationId: conversation.id, message: serializeMessage(message) },
   });
   const isImmediate = parseSlashCommand(input.text) !== null || input.externalMessageId.startsWith("callback:");
-  await maybeRunAgentTurn(conversation.id, isImmediate);
+  await maybeRunAgentTurn(organizationId, conversation.id, isImmediate);
 }
 
 function toDate(timestamp: string): Date {

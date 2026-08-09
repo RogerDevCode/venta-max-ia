@@ -3,6 +3,7 @@ import { getAuthDb, getDb, schema } from "@/lib/db";
 import { withJobTransaction } from "@/lib/db/context";
 import { generateEmbedding } from "@/server/ai/rag/embeddings";
 import { BOTILLERIA_FAQS, botilleriaFaqId } from "@/server/seed/botilleria-faq";
+import "./enforce-ipv4";
 
 function option(name: string) {
   const index = process.argv.indexOf(name);

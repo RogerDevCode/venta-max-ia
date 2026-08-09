@@ -13,7 +13,7 @@ export async function GET() {
       .select({ id: schema.organization.id })
       .from(schema.organization);
     const perTenant = await Promise.all(organizations.map(({ id }) =>
-      withJobTransaction(id, () => getDb().execute<{
+      withJobTransaction(id, "health-route", () => getDb().execute<{
       queue_lag_seconds: number;
       oldest_lease_seconds: number;
       conflicts: number;

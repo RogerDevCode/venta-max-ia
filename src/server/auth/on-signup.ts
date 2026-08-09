@@ -48,7 +48,7 @@ export async function onUserCreated(userId: string, userName: string) {
     });
   });
   if (createdOrgId) {
-    await withTenantTransaction(createdOrgId, userId, "system", async () => {
+    await withTenantTransaction(createdOrgId, userId, "system", "on-signup", async () => {
       const tenantDb = getDb();
       await tenantDb.insert(schema.pipelineStage).values(
         SEED_STAGES.map((s, i) => ({

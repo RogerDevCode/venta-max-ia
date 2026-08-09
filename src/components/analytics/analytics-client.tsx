@@ -250,7 +250,7 @@ function KpiCard({
       {sub && (
         <span
           className={cn(
-            "text-[11px] flex items-center gap-1",
+            "text-xs flex items-center gap-1",
             good === true
               ? "text-[var(--success)]"
               : good === false
@@ -327,7 +327,7 @@ export function AnalyticsClient() {
         <div className="flex items-center gap-2.5">
           <BarChart2 className="h-5 w-5 text-[var(--accent)]" strokeWidth={1.7} />
           <h1 className="text-lg font-semibold tracking-tight">Analytics</h1>
-          <span className="rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--accent-text)] uppercase tracking-wide">
+          <span className="rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--accent-text)] uppercase tracking-wide">
             Beta
           </span>
         </div>
@@ -453,7 +453,7 @@ export function AnalyticsClient() {
                   valueKey="revenue"
                   color="var(--accent)"
                 />
-                <div className="flex justify-between mt-1 text-[10px] text-[var(--text-4)]">
+                <div className="flex justify-between mt-1 text-xs text-[var(--text-4)]">
                   <span>{data.revenueByDay[0]?.day}</span>
                   <span>{data.revenueByDay[data.revenueByDay.length - 1]?.day}</span>
                 </div>
@@ -529,7 +529,7 @@ export function AnalyticsClient() {
                       <div className="flex items-center justify-between text-xs">
                         <span className="flex items-center gap-1.5 font-medium truncate">
                           <span
-                            className="text-[10px] font-bold w-4 text-center shrink-0"
+                            className="text-xs font-bold w-4 text-center shrink-0"
                             style={{ color: colors[i] }}
                           >
                             #{i + 1}
@@ -599,7 +599,7 @@ export function AnalyticsClient() {
                         ? `${Math.round((kpis.handoffs / kpis.totalConversations) * 100)}%`
                         : "—"}
                     </div>
-                    <div className="text-[10px] text-[var(--text-4)]">
+                    <div className="text-xs text-[var(--text-4)]">
                       {kpis.handoffs} de {kpis.totalConversations}
                     </div>
                   </div>
@@ -610,7 +610,7 @@ export function AnalyticsClient() {
                         ? (kpis.totalMessages / kpis.totalConversations).toFixed(1)
                         : "—"}
                     </div>
-                    <div className="text-[10px] text-[var(--text-4)]">promedio</div>
+                    <div className="text-xs text-[var(--text-4)]">promedio</div>
                   </div>
                 </div>
               </div>
@@ -618,7 +618,7 @@ export function AnalyticsClient() {
           </section>
         </div>
 
-        <footer className="text-center text-[10px] text-[var(--text-4)] pb-2">
+        <footer className="text-center text-xs text-[var(--text-4)] pb-2">
           Datos en tiempo real · Período: {RANGE_LABELS[range]} · Actualizado ahora
         </footer>
       </div>

@@ -4,7 +4,10 @@ import { getCommerceSettings, saveCommerceSettings } from "@/server/ecommerce/se
 
 export const dynamic = "force-dynamic";
 
-const input = z.object({ maxUnitsPerProduct: z.number().int().min(1).max(1000) });
+const input = z.object({
+  maxUnitsPerProduct: z.number().int().min(1).max(1000).optional(),
+  autoExpirationHours: z.number().int().min(1).max(720).optional(),
+});
 
 export const GET = withAuth(async (session) =>
   Response.json({ settings: await getCommerceSettings(session.organizationId) })

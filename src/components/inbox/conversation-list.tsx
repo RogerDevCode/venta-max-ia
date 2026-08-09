@@ -119,7 +119,7 @@ export function ConversationList({
             {f.label}
             <span
               className={cn(
-                "rounded-full px-1.5 text-[11px]",
+                "rounded-full px-1.5 text-xs",
                 filter === f.id ? "bg-white/20" : "bg-secondary text-text-3"
               )}
             >
@@ -197,7 +197,7 @@ export function ConversationList({
                       </span>
                       <span className="mt-1.5 flex items-center gap-1.5">
                         {c.stageName && (
-                          <span className="inline-flex items-center gap-1.5 rounded-full border bg-secondary px-2 py-0.5 text-[11px] text-text-2">
+                          <span className="inline-flex items-center gap-1.5 rounded-full border bg-secondary px-2 py-0.5 text-xs text-text-2">
                             <span
                               className="h-[7px] w-[7px] rounded-full"
                               style={{
@@ -208,7 +208,7 @@ export function ConversationList({
                           </span>
                         )}
                         {c.handoffAt && (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-[#ece2cf] bg-[#faf7f0] px-2 py-0.5 text-[11px] text-[#8a6d3b]">
+                          <span className="inline-flex items-center gap-1 rounded-full border border-[#ece2cf] bg-[#faf7f0] px-2 py-0.5 text-xs text-[#8a6d3b]">
                             <UserRound className="h-3 w-3" strokeWidth={1.7} />
                             Atención humana
                           </span>

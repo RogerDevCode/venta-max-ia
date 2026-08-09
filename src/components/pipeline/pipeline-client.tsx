@@ -180,7 +180,7 @@ function LeadCard({ lead, overlay = false }: { lead: BoardLead; overlay?: boolea
         <ContactAvatar name={lead.contact.name} seed={lead.contact.id} size="sm" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{lead.contact.name}</p>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {lead.lastActivityAt
               ? `Actividad: ${formatTime(lead.lastActivityAt)}`
               : "Sin actividad"}

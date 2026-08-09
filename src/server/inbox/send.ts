@@ -51,6 +51,7 @@ export async function sendText(input: {
   };
   telegramCredentials?: { id?: string; token: string; status: string } | null;
 }): Promise<SendResult> {
+  console.log(`[debug] sendText called`);
   return sendTelegramText({
     conversationId: input.conversationId,
     organizationId: input.organizationId,
@@ -141,8 +142,10 @@ export async function sendTelegramText(input: {
   const durableMode = (process.env.TELEGRAM_DURABLE_MODE ?? "enforce") as "off" | "shadow" | "enforce";
   let res: { message_id: number };
   let deliveredByOutbox = false;
+  console.log(`[debug] sendTelegramText: durableMode=${durableMode}, NODE_ENV=${process.env.NODE_ENV}`);
   try {
     if (durableMode === "enforce" && process.env.NODE_ENV !== "test") {
+      console.log(`[debug] sendTelegramText: entering outbox mode`);
       const integrationId = telegramCredentials.id ?? (await db.select({ id: schema.telegramIntegration.id })
         .from(schema.telegramIntegration)
         .where(eq(schema.telegramIntegration.organizationId, input.organizationId)).limit(1))[0]?.id;
@@ -176,7 +179,9 @@ export async function sendTelegramText(input: {
       if (!sentRows[0]?.messageId) throw new SendError("telegram_error", "Telegram no devolvió ID de mensaje");
       res = { message_id: sentRows[0].messageId };
       deliveredByOutbox = true;
+      console.log(`[debug] sendTelegramText: outbox successful`);
     } else {
+      console.log(`[debug] sendTelegramText: entering direct send mode`);
       res = await sendMessage({
         chatId: row.contact.externalAddress,
         text: input.text,
@@ -199,8 +204,10 @@ export async function sendTelegramText(input: {
       }
       throw new SendError("telegram_error", err.description || err.message);
     }
+    console.log(`[debug] sendTelegramText: throwing err:`, err);
     throw err;
   }
+  console.log(`[debug] sendTelegramText: proceeding to message insert`);
 
   if (menu && !deliveredByOutbox) {
     await activateDeliveredTelegramMenu({

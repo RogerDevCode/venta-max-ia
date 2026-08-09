@@ -62,10 +62,11 @@ describe("Pruebas del Frontend del Tenant — Componentes y Presentación UI", (
     });
   });
 
-  it("expone la configuración tenant del máximo de unidades", () => {
+  it("expone la configuración tenant del máximo de unidades y auto-expiración", () => {
     const source = readFileSync("src/components/settings/catalog-client.tsx", "utf8");
     expect(source).toContain('fetch("/api/catalog/settings")');
     expect(source).toContain('id="max-units-per-product"');
-    expect(source).toContain("Máximo por producto y carrito");
+    expect(source).toContain('id="auto-expiration-hours"');
+    expect(source).toContain("Configuración Comercial");
   });
 });

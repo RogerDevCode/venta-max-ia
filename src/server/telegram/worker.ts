@@ -1,6 +1,7 @@
 import { and, inArray, lt } from "drizzle-orm";
 import { getAuthDb, getDatabaseContext, getDb, schema } from "@/lib/db";
 import { withJobTransaction } from "@/lib/db/context";
+import { processAutoExpiredOrders } from "@/server/ecommerce/service";
 import { drainTelegramMenuActions } from "@/server/telegram/menu-action-runner";
 import { drainTelegramOutbox } from "@/server/telegram/outbox";
 import { drainTelegramReceipts } from "@/server/telegram/receipt-queue";
@@ -64,10 +65,11 @@ export async function drainTelegramReliabilityWork(): Promise<void> {
         .select({ id: schema.organization.id })
         .from(schema.organization);
       await Promise.allSettled(organizations.map(({ id }) =>
-        withJobTransaction(id, async () => {
+        withJobTransaction(id, "telegram-worker", async () => {
           const results = await Promise.allSettled([
             drainTelegramReceipts(),
             drainTelegramMenuActions(),
+            processAutoExpiredOrders(id),
             drainTelegramOutbox(),
             purgeTelegramTerminalRows(),
           ]);

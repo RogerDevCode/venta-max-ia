@@ -8,7 +8,7 @@ export const GET = withAuth(async (session, req: Request) => {
   const sinceParam = url.searchParams.get("since");
   const since = sinceParam ? new Date(sinceParam) : undefined;
   const conversations = await listConversations(
-    session.organizationId,
+    session,
     since && !Number.isNaN(since.getTime()) ? since : undefined
   );
   return Response.json({ conversations });

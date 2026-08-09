@@ -194,7 +194,7 @@ export function RegisterClientPage() {
                 Infraestructura Self-Hosted Soberana
               </span>
             </div>
-            <p className="text-[11px] leading-relaxed pl-4">
+            <p className="text-xs leading-relaxed pl-4">
               Tus datos y conexiones de Telegram operan con cifrado AES-256 en reposo bajo máxima privacidad y cumplimiento en Chile.
             </p>
           </div>

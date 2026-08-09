@@ -33,6 +33,7 @@ export function withAuth<Args extends unknown[]>(
         session.organizationId,
         session.userId,
         "user",
+        "api-handler",
         () => handler(session, ...args),
       );
     } catch (err) {

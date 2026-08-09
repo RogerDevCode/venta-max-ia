@@ -47,6 +47,7 @@ export async function POST(req: Request, { params }: Params) {
 
   const integration = await findTelegramIntegrationByWebhookToken(webhookToken);
   if (!integration) {
+    console.error(`[webhook] Error: No se encontró la integración para el token: ${webhookToken}`);
     return new Response(null, { status: 404 });
   }
 
@@ -55,6 +56,7 @@ export async function POST(req: Request, { params }: Params) {
   if (integration.status === "connected" && integration.webhookHeaderSecretHash) {
     const header = req.headers.get("x-telegram-bot-api-secret-token") ?? "";
     if (!header || !safeEqual(hashTelegramWebhookToken(header), integration.webhookHeaderSecretHash)) {
+      console.error(`[webhook] Error: Token secreto inválido o faltante para la organización ${integration.organizationId}`);
       return new Response(null, { status: 404 });
     }
   }

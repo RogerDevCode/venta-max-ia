@@ -162,6 +162,20 @@
       "when": 1785729780000,
       "tag": "0022_backup_sequence_access",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786058526424,
+      "tag": "0023_next_stephen_strange",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786133052969,
+      "tag": "0024_lucky_paibok",
+      "breakpoints": true
     }
   ]
 }
