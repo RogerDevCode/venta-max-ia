@@ -2,7 +2,7 @@ import { execSync } from "child_process";
 import "./enforce-ipv4";
 
 const WEBHOOK_URL = "http://127.0.0.1:7080/api/webhooks/telegram/O657BkPClI3AJe_5oc7OUIOwYf7I7A1yGUm2vibgCZM";
-const SECRET = "c7PYTwybNx2dLwVOmBgjwlRMvBI9h0GdgWC5SE20cF8";
+const SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || "test-secret";
 const TEST_USER_ID = 5391760292;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

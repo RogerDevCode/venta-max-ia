@@ -16,7 +16,7 @@ async function main() {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) throw new Error("TELEGRAM_BOT_TOKEN missing");
   const webhookUrl = "http://127.0.0.1:7080/api/webhooks/telegram/O657BkPClI3AJe_5oc7OUIOwYf7I7A1yGUm2vibgCZM";
-  const secret = "c7PYTwybNx2dLwVOmBgjwlRMvBI9h0GdgWC5SE20cF8";
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET || "test-secret";
 
   console.log("Polling Telegram getUpdates and forwarding to local webhook...");
   let offset = 0;

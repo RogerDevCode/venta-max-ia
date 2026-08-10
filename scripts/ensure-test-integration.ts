@@ -30,7 +30,7 @@ async function main() {
   const orgId = "org_x3jnpp3eyk6h608shh3k";
 
   const plainToken = "O657BkPClI3AJe_5oc7OUIOwYf7I7A1yGUm2vibgCZM";
-  const secretHeader = "c7PYTwybNx2dLwVOmBgjwlRMvBI9h0GdgWC5SE20cF8";
+  const secretHeader = process.env.TELEGRAM_WEBHOOK_SECRET || "test-secret";
 
   const existing = await db
     .select({ id: schema.telegramIntegration.id })
