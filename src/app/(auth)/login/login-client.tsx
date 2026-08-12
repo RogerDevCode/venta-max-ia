@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { signIn } from "@/lib/auth/client";
 import { Button } from "@/components/ui/button";
@@ -12,10 +12,15 @@ import { Label } from "@/components/ui/label";
 
 export function LoginClientPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    searchParams.get("error") === "no_org" 
+      ? "Tu cuenta fue creada pero no tiene una organización asignada. Pídele al propietario que te asigne." 
+      : null
+  );
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
@@ -70,7 +75,7 @@ export function LoginClientPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword((visible) => !visible)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-700 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer"
                 aria-label={showPassword ? "Ocultar contraseña" : "Ver contraseña"}
                 title={showPassword ? "Ocultar contraseña" : "Ver contraseña"}
               >

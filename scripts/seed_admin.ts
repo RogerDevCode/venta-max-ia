@@ -6,7 +6,7 @@ async function main() {
     try {
       const res = await auth.api.signUpEmail({
         body: {
-          email: "admin@stax.ink",
+          email: "roger.gallegos.cl@gmail.com",
           password: "StaxPlataforma2026!",
           name: "Administrador STAX",
         },
@@ -14,7 +14,7 @@ async function main() {
       console.log("Administrador STAX creado exitosamente en VentaMax IA:", res.user.email);
     } catch (err: any) {
       if (err?.message?.includes("already exists") || err?.code === "USER_ALREADY_EXISTS") {
-        console.log("El usuario admin@stax.ink ya existe en VentaMax IA.");
+        console.log("El usuario roger.gallegos.cl@gmail.com ya existe en VentaMax IA.");
       } else {
         throw err;
       }

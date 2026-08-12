@@ -118,9 +118,9 @@ expect(() => getEnvFrom({ NODE_ENV: "production" })).toThrow(/APP_DATABASE_URL/)
 
 Rechazar symlink, archivo no regular, contenido vacío y modo con bits `0o077`. Recortar solo salto final. No incluir el valor en mensajes de error.
 
-- [ ] **Step 3: Eliminar fallback Neon/local**
+- [x] **Step 3: Eliminar fallback Neon/local**
 
-Quitar la sustitución automática por `postgresql://postgres:postgres...` de `getEnv`, `scripts/migrate.mjs` y `scripts/verify-schema.mjs`. Los placeholders continúan únicamente durante `phase-production-build` y nunca alcanzan runtime.
+Quitar la sustitución automática por `postgresql://postgres:postgres...` de `getEnv`, `scripts/migrate.mjs` y `scripts/verify-schema.mjs`. Los fallbacks de Neon han sido eliminados por completo en favor de PostgreSQL local / Docker.
 
 - [ ] **Step 4: Endurecer secretos no PostgreSQL**
 

@@ -12,7 +12,7 @@ export default async function AppLayout({
   const session = await getSessionOrNull();
   if (!session) {
     const orgExists = await hasAnyOrganization();
-    redirect(orgExists ? "/login" : "/register");
+    redirect(orgExists ? "/login?error=no_org" : "/register");
   }
   const branding = await withTenantTransaction(
     session.organizationId,

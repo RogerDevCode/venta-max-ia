@@ -3,7 +3,7 @@ import { getEnvFrom } from "@/lib/env";
 
 const valid = {
   NODE_ENV: "production",
-  APP_BASE_URL: "https://bot.stax.ink",
+  APP_BASE_URL: "https://bot.tuvitrina.lat",
   APP_DATABASE_URL: "postgresql://venta_app:x@postgres:5432/vocero",
   AUTH_DATABASE_URL: "postgresql://venta_auth:x@postgres:5432/vocero",
   INGRESS_DATABASE_URL: "postgresql://venta_ingress:x@postgres:5432/vocero",

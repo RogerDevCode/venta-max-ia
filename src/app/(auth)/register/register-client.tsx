@@ -17,13 +17,19 @@ export function RegisterClientPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (password !== confirmPassword) {
+      setError("Las contraseñas no coinciden.");
+      return;
+    }
     setLoading(true);
     const { error: err } = await signUp.email({ name, email, password });
     setLoading(false);
@@ -167,6 +173,52 @@ export function RegisterClientPage() {
                 title={showPassword ? "Ocultar contraseña" : "Ver contraseña"}
               >
                 {showPassword ? (
+                  <EyeOff className="h-4 w-4 animate-in fade-in zoom-in-75 duration-150" />
+                ) : (
+                  <Eye className="h-4 w-4 animate-in fade-in zoom-in-75 duration-150" />
+                )}
+              </button>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label
+              htmlFor="confirmPassword"
+              className={cn(
+                "font-medium text-xs sm:text-sm transition-colors",
+                theme === "dark" ? "text-slate-200" : "text-slate-800"
+              )}
+            >
+              Confirmar Contraseña
+            </Label>
+            <div className="relative">
+              <Input
+                id="confirmPassword"
+                type={showConfirmPassword ? "text" : "password"}
+                autoComplete="new-password"
+                required
+                minLength={8}
+                placeholder="••••••••••••"
+                className={cn(
+                  "h-10 pl-3.5 pr-10 rounded-xl transition-all",
+                  theme === "dark"
+                    ? "bg-slate-950/90 border-slate-800 text-slate-100 placeholder:text-slate-500 shadow-inner focus-visible:ring-blue-500 focus-visible:border-blue-500"
+                    : "bg-[#ced9e7] border-slate-400/80 text-slate-950 placeholder:text-slate-500 shadow-inner focus-visible:bg-[#d8e3f0] focus-visible:ring-blue-600 focus-visible:border-blue-600"
+                )}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className={cn(
+                  "absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer",
+                  theme === "dark"
+                    ? "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-300/60"
+                )}
+                title={showConfirmPassword ? "Ocultar contraseña" : "Ver contraseña"}
+              >
+                {showConfirmPassword ? (
                   <EyeOff className="h-4 w-4 animate-in fade-in zoom-in-75 duration-150" />
                 ) : (
                   <Eye className="h-4 w-4 animate-in fade-in zoom-in-75 duration-150" />
