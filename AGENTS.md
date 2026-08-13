@@ -148,6 +148,8 @@ un puerto: identifica al propietario del proceso y detén solo el servicio que e
 
 ## 9. Calidad obligatoria
 
+- **LEY ESTRICTA DE VALIDACIÓN CI Y LINTERS**: Antes de declarar cualquier tarea como completada o responder 'está listo', es **OBLIGATORIO** ejecutar localmente la suite completa de comprobaciones replicando exactamente los comandos del pipeline de GitHub Actions (`.github/workflows/ci.yml`), incluyendo linters (`pnpm lint`), chequeos de tipos (`pnpm typecheck`), compilación (`pnpm build`) y pruebas (`pnpm test`, verificaciones de DB). Queda estrictamente prohibido asumir o confiar en arreglos parciales sin validar la suite integral localmente.
+
 ```bash
 pnpm typecheck
 pnpm lint
