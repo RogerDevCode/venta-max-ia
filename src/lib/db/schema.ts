@@ -274,6 +274,7 @@ export const telegramIntegration = pgTable(
     tokenTag: text("token_tag"),
     botId: bigint("bot_id", { mode: "number" }),
     botUsername: text("bot_username"),
+    notificationChatId: text("notification_chat_id"),
     status: text("status", { enum: ["pending", "header_pending", "connected", "reconnect_required", "failed"] }).notNull().default("reconnect_required"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

@@ -2,7 +2,7 @@ import dns from "node:dns";
 import { eq } from "drizzle-orm";
 import { getAuthDb, getDb, schema } from "@/lib/db";
 import { withJobTransaction } from "@/lib/db/context";
-import { startTelegramReliabilityWorker } from "@/server/telegram/worker";
+import { startTelegramReliabilityWorker, startDailySummaryWorker } from "@/server/telegram/worker";
 
 try {
   dns.setDefaultResultOrder("ipv4first");
@@ -58,4 +58,5 @@ export async function cleanupOrphanRuns(): Promise<void> {
 
 export async function startTelegramReliabilityRecovery(): Promise<void> {
   await startTelegramReliabilityWorker();
+  startDailySummaryWorker();
 }

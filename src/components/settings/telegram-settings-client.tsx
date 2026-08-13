@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-type Connection = { botId: number; botUsername: string | null; status: string; tokenLast4: string };
+type Connection = { botId: number; botUsername: string | null; status: string; tokenLast4: string; notificationChatId?: string | null };
 
 export function TelegramSettingsClient() {
   const [connection, setConnection] = useState<Connection | null>(null);
@@ -15,9 +15,16 @@ export function TelegramSettingsClient() {
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const [chatId, setChatId] = useState("");
+  const [savingChatId, setSavingChatId] = useState(false);
+
   async function load() {
     const res = await fetch("/api/settings/telegram").catch(() => null);
-    if (res?.ok) setConnection((await res.json() as { connection: Connection | null }).connection);
+    if (res?.ok) {
+      const conn = (await res.json() as { connection: Connection | null }).connection;
+      setConnection(conn);
+      if (conn?.notificationChatId) setChatId(conn.notificationChatId);
+    }
   }
 
   useEffect(() => { void load(); }, []);
@@ -42,6 +49,23 @@ export function TelegramSettingsClient() {
     }
     setToken("");
     setMessage("Bot conectado y webhook registrado.");
+    await load();
+  }
+
+  async function saveChatId() {
+    setSavingChatId(true);
+    setMessage(null);
+    const res = await fetch("/api/settings/telegram", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ notificationChatId: chatId || null }),
+    }).catch(() => null);
+    setSavingChatId(false);
+    if (!res?.ok) {
+      setMessage("No se pudo guardar el Chat ID.");
+      return;
+    }
+    setMessage("Chat ID guardado exitosamente.");
     await load();
   }
 
@@ -96,6 +120,27 @@ export function TelegramSettingsClient() {
               En BotFather: /newbot → copia el token de atención a clientes de este negocio. El bot administrativo se configura por separado en el servidor.
             </p>
           </div>
+
+          {connection?.status === "connected" && (
+            <div className="space-y-1.5 pt-4 border-t">
+              <Label htmlFor="telegram-chatid">Chat ID para resumen diario</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="telegram-chatid"
+                  value={chatId}
+                  onChange={(e) => setChatId(e.target.value)}
+                  placeholder="ej: 123456789"
+                  className="max-w-xs"
+                />
+                <Button disabled={savingChatId} variant="secondary" onClick={() => void saveChatId()}>
+                  {savingChatId ? "Guardando…" : "Guardar Chat ID"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Abre @userinfobot en Telegram, envia /start y copia el numero de &quot;Id:&quot;
+              </p>
+            </div>
+          )}
 
           <section aria-label="Panel de incidencias" className="rounded border bg-panel/50 p-3 text-sm">
             <div className="flex items-center justify-between gap-3">

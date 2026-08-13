@@ -1,0 +1,1 @@
+ALTER TABLE "telegram_integration" ADD COLUMN "notification_chat_id" text;

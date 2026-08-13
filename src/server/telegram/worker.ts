@@ -117,3 +117,49 @@ export function telegramWorkerState() {
     lastPurgeAt: workerGlobal.__telegramReliabilityLastPurgeAt?.toISOString() ?? null,
   };
 }
+
+export function getMsUntilNextSummary(targetHour = 8): number {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Santiago',
+    hour12: false,
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric'
+  });
+  const parts = formatter.formatToParts(new Date());
+  const h = parseInt(parts.find(p => p.type === 'hour')!.value, 10);
+  const m = parseInt(parts.find(p => p.type === 'minute')!.value, 10);
+  const s = parseInt(parts.find(p => p.type === 'second')!.value, 10);
+  
+  let ms = ((targetHour - h - 1) * 3600 + (59 - m) * 60 + (60 - s)) * 1000;
+  if (ms <= 0) ms += 24 * 3600 * 1000;
+  return ms;
+}
+
+export function startDailySummaryWorker(): void {
+  const wg = globalThis as unknown as { __dailySummaryTimer?: NodeJS.Timeout };
+  if (wg.__dailySummaryTimer) return;
+  
+  const scheduleNext = () => {
+    const ms = getMsUntilNextSummary(8);
+    wg.__dailySummaryTimer = setTimeout(async () => {
+      const { sendDailySummaryToAll } = await import("@/server/telegram/daily-summary");
+      const connection = await import("@/lib/db").then(({ getSql }) => getSql().reserve());
+      const lockName = `venta-max:daily-summary`;
+      try {
+        const lock = await connection<{ locked: boolean }[]>`select pg_try_advisory_lock(hashtext(${lockName})) as locked`;
+        if (lock[0]?.locked) {
+          await sendDailySummaryToAll();
+        }
+      } catch (err) {
+        console.error("[daily-summary-worker]", err);
+      } finally {
+        await connection`select pg_advisory_unlock(hashtext(${lockName}))`;
+        connection.release();
+        scheduleNext();
+      }
+    }, ms);
+  };
+  
+  scheduleNext();
+}
