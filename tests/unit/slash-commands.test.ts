@@ -135,7 +135,7 @@ describe("Menú Convertidor de Chatbot Migrado a VentaMaxIA con Multi-Tenancy Re
       expect(parseSlashCommand("mostrar mis pedidos")).toBe("menu:pedidos");
       expect(parseSlashCommand("confirmar pedido")).toBe("cart:checkout");
       expect(parseSlashCommand("vaciar mi carrito")).toBe("cart:clear");
-      expect(parseSlashCommand("cancelar mi pedido")).toBe("menu:pedidos");
+      expect(parseSlashCommand("cancelar mi pedido")).toBe("order:cancel:active");
     });
   });
 

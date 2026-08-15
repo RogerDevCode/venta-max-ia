@@ -10,6 +10,13 @@ const { mockChatJson, mockBuildRagContext, mockDbState, mockUpdateSet, mockSendT
       message: { conversationId: "conversation_id", createdAt: "created_at" },
       pipelineStage: { organizationId: "organization_id", position: "position" },
       lead: { contactId: "contact_id", organizationId: "organization_id" },
+      product: {
+        organizationId: "organization_id",
+        active: "active",
+        deletedAt: "deleted_at",
+        name: "name",
+        description: "description",
+      },
     };
     return {
       mockChatJson: vi.fn(),

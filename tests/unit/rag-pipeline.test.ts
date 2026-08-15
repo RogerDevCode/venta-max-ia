@@ -8,6 +8,9 @@ const { mockChatJson, mockBuildRagContext, mockDbState, mockSchema } = vi.hoiste
     message: { conversationId: "conversation_id", createdAt: "created_at" },
     pipelineStage: { organizationId: "organization_id", position: "position" },
     lead: { contactId: "contact_id", organizationId: "organization_id" },
+    product: { organizationId: "organization_id", active: "active", deletedAt: "deleted_at", name: "name", description: "description" },
+    cart: { id: "id", conversationId: "conversation_id", organizationId: "organization_id" },
+    commerceSettings: { maxUnitsPerProduct: "max_units_per_product", autoExpirationHours: "auto_expiration_hours", organizationId: "organization_id" },
   };
   return {
     mockChatJson: vi.fn(),

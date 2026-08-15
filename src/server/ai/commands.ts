@@ -86,19 +86,49 @@ export function parseNaturalAddToCart(text?: string | null): NaturalAddToCartReq
     .replace(/[¿?¡!.,]/g, "")
     .replace(/\s+/g, " ");
 
-  if (clean.includes("y confirmar") || clean.includes("confirmar") || clean.length > 80) {
+  if (
+    clean.includes("y confirmar") ||
+    clean.includes("confirmar") ||
+    clean.includes("cotizar") ||
+    clean.includes("cotizacion") ||
+    clean.includes("consultar") ||
+    clean.includes("informacion") ||
+    clean.includes("asesoria") ||
+    clean.includes("agendar") ||
+    clean.includes("reserva") ||
+    clean.includes("saber") ||
+    clean.includes("precio") ||
+    clean.includes("garantia") ||
+    clean.includes("horario") ||
+    clean.includes("cuanto cuesta") ||
+    clean.includes("cuanto vale") ||
+    clean.startsWith("cual") ||
+    clean.startsWith("como") ||
+    clean.startsWith("donde") ||
+    clean.startsWith("que") ||
+    clean.length > 80
+  ) {
     return null;
   }
 
-  const match = clean.match(/^(?:agrega|anade|anade|pon|ponme|dame|llevo|me llevo|quiero|deseo|comprar|compra|sumar|suma|pedir|pido|necesito|me das)?\s*(?:(\d+|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+)?(?:de\s+)?(.+?)(?:\s+(?:al|a mi) carrito)?$/);
-  if (!match?.[2]) return null;
-  const quantityToken = match[1];
+  // Si tiene verbo explícito de compra/adición
+  const match = clean.match(/^(?:agrega|anade|ponme|pon|dame|me llevo|llevo|quiero comprar|deseo comprar|comprar|compra|sumar|suma|pedir|pido|necesito|me das|quiero|deseo)\s*(?:(\d+|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+)?(?:de\s+)?(.+?)(?:\s+(?:al|a mi) carrito)?$/);
+  
+  // O si empieza con un número/cantidad explícita (ej. "2 cristal lata 350")
+  const matchQuantityFirst = !match
+    ? clean.match(/^(\d+|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)\s+(?:de\s+)?(.+?)(?:\s+(?:al|a mi) carrito)?$/)
+    : null;
+
+  const targetMatch = match || matchQuantityFirst;
+  if (!targetMatch?.[2]) return null;
+
+  const quantityToken = targetMatch[1];
   const quantityCandidate = quantityToken
     ? (/^\d+$/.test(quantityToken) ? Number(quantityToken) : SPANISH_QUANTITIES[quantityToken])
     : 1;
   const quantity = quantityCandidate ?? 1;
-  const query = match[2].trim();
-  if (!Number.isSafeInteger(quantity) || quantity < 1 || query.length < 1) return null;
+  const query = targetMatch[2].trim();
+  if (!Number.isSafeInteger(quantity) || quantity < 1 || query.length <= 1) return null;
   return { quantity, query };
 }
 
@@ -126,14 +156,14 @@ export function parseSlashCommand(text?: string | null): SlashCommandType | null
       /^(que tengo en (el|mi) (carro|carrito)|ver mi carro|ver el carro|ver carro|mostrar carro|mostrar mi carro)$/.test(natural)) {
     return "menu:carrito";
   }
-  if (/^(ver|mostrar|revisar|consultar)?\s*(el|mi|mis)?\s*(pedido|pedidos|orden|compras)$/.test(natural) ||
-      /^(estado de (mi|el) pedido|que pedi|ver mi pedido|ver el pedido|ver pedido|mostrar pedido|mostrar mi pedido)$/.test(natural)) {
-    return "menu:pedidos";
-  }
-  if (/^(cancelar|anular|eliminar|borrar)\s*(el|mi|mis)?\s*(pedido|pedidos|orden|compra)$/.test(natural) ||
-      /^(quiero|deseo|cancela|anula)\s*(cancelar|anular)?\s*(mi|el)?\s*(pedido|orden)$/.test(natural) ||
-      natural === "cancelar mi pedido" || natural === "anular mi pedido" || natural === "cancelar pedido" || natural === "anular pedido") {
+  if (/^(cancelar|anular|eliminar|borrar|cancela|anula)\s*(el|mi|mis)?\s*(pedido|pedidos|orden|compra)$/.test(natural) ||
+      /^(quiero|deseo)\s*(cancelar|anular)\s*(mi|el)?\s*(pedido|orden|compra)$/.test(natural) ||
+      natural === "cancelar mi pedido" || natural === "anular mi pedido" || natural === "cancelar pedido" || natural === "anular pedido" || natural === "cancela mi pedido") {
     return "order:cancel:active";
+  }
+  if (/^(ver|mostrar|revisar|consultar|mis)\s*(el|mi|mis)?\s*(pedido|pedidos|orden|compras)$/.test(natural) ||
+      /^(estado de (mi|el) pedido|que pedi|ver mi pedido|ver el pedido|ver pedido|mostrar pedido|mostrar mi pedido|mis pedidos|mis compras|pedidos)$/.test(natural)) {
+    return "menu:pedidos";
   }
   if (/^(confirmar|confirmar compra|confirmar pedido|quiero confirmar)$/.test(natural)) return "cart:checkout";
   if (/^(vaciar|limpiar|borrar) (mi )?carrito$/.test(natural)) return "cart:clear";

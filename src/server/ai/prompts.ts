@@ -38,8 +38,15 @@ export function buildAgentSystemPrompt(input: {
       ? `VARIABLES DE ESTADO ACUMULADAS DE ESTA CONVERSACIÓN:\n${JSON.stringify(input.stateMetadata, null, 2)}`
       : null;
 
+  const nowChile = new Intl.DateTimeFormat("es-CL", {
+    timeZone: "America/Santiago",
+    dateStyle: "full",
+    timeStyle: "short",
+  }).format(new Date());
+
   return [
     `Eres "${profile.name}", el asistente de Telegram de este negocio. Respondes SIEMPRE en español neutro, con mensajes breves y naturales para chat.`,
+    `FECHA Y HORA ACTUAL EN CHILE (America/Santiago): ${nowChile}.`,
     profile.tone ? `Tono: ${profile.tone}` : null,
     profile.instructions ? `Instrucciones del negocio:\n${profile.instructions}` : null,
     profile.escalationRules
@@ -67,6 +74,7 @@ export function buildAgentSystemPrompt(input: {
       '- {"action":"cancelar_pedido"} — cancelar el pedido activo del cliente o vaciar su carrito.',
       "Reglas duras:",
       "- Sólo responde sobre esta Botillería: catálogo, pedidos, delivery, retiro, pagos, horarios, atención humana y consumo responsable.",
+      "- ZONA HORARIA Y FECHAS OBLIGATORIAS: Todas las fechas ('hoy', 'mañana', 'próximo martes'), horarios de atención, apertura, cierre y delivery operan y se comunican SIEMPRE en hora local de Chile (America/Santiago). Nunca uses ni menciones UTC.",
       "- Productos, precios, stock y promociones existen únicamente si la consulta tenant-scoped a PostgreSQL los devuelve.",
       "- Usa las FAQ recuperadas por pgvector sólo como contexto del negocio; si no cubren una duda, no inventes una condición.",
       "- No inventes productos, precios, stock, promociones, delivery ni condiciones. Fuera de catálogo, FAQ, pedido o atención de esta Botillería: redirige el tema.",
